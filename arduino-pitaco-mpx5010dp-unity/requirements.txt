@@ -1,0 +1,21 @@
+# PITACO 2.0 / MPX5010DP - interface grafica (Windows, Python 3.10+)
+# Instalar: python -m pip install -r requirements.txt
+#
+# tkinter faz parte da instalacao padrao do Python para Windows; nao e pacote pip.
+# Biblioteca GUI
+customtkinter
+
+# Serial USB e enumeracao de portas COM
+pyserial
+WMI
+pywin32
+
+# BLE: mantido na interface, embora a etapa atual seja via cabo
+bleak
+
+# Graficos e imagens da interface
+Pillow
+matplotlib
+
+# Gravacao de firmware, funcionalidade mantida da GUI original
+esptool
