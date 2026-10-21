@@ -270,7 +270,10 @@ void loop() {
 
 void ListenCommand(char cmd) {
   if (cmd == 'e' || cmd == 'E') {
-    if (zeroInProgress) zeroInProgress = false; // handshake tem prioridade
+    if (zeroInProgress) {
+      zeroInProgress = false; // handshake tem prioridade
+      SendStatus("zero_cancelled\n");
+    }
     if (isSampling) {
       isSampling = false;
       isCalibrated = false;
@@ -333,7 +336,9 @@ void PollTenSecondZero() {
   if (now - zeroStartMs >= ZERO_WINDOW_MS) {
     zeroInProgress = false;
     if (zeroCount < ZERO_MIN_SAMPLES) {
-      SendStatus("zero_error\n");
+      char reply[48];
+      snprintf(reply, sizeof(reply), "zero_error:samples=%u\n", zeroCount);
+      SendStatus(reply);
       return; // Preserva a referencia anterior.
     }
     calibrationOffsetPa = (float)(zeroAccumPa / zeroCount);
