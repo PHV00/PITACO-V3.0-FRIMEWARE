@@ -4,17 +4,13 @@
 #include <BLE2902.h>
 #include <Update.h>
 
-// PITACO 2.0 - teste de integracao MPX5010DP + ESP32-C3
-// Valores negativos representam variacao sob a referencia, NAO pressao
-// diferencial negativa calibrada pelo fabricante do MPX5010DP.
+// ESP32 WROOM-DA apenas
 #define DEBUG false
-#define DEBUG_BT true
+#define DEBUG_BT true 
 #define PORT_SENSOR 0
-#define R1 2170.0f
-#define R2 1500.0f
+#define R1 1800.0
+#define R2 3300.0
 #define IS_WROOM_DA false
-const float MPX_SUPPLY_V = 5.0f;        // Tolerancia de Vs influencia pressao quantitativa
-const float ZERO_REFERENCE_PA = 100.0f; // Referencia provisoria para testar a Unity
 
 #if IS_WROOM_DA // rotinas de redução de consumo relativas ao BT_SPP
 #include "esp_bt_main.h"
@@ -23,10 +19,10 @@ const float ZERO_REFERENCE_PA = 100.0f; // Referencia provisoria para testar a U
 
 // filtro média móvel com EMA
 #define MOVING_AVERAGE true
-#define EMA_ALPHA 0.35                                                      
+#define EMA_ALPHA 0.02                                                      
 // 100 para EMA sem média móvel, 20 para EMA com média móvel
 // #define SAMPLESIZE 100
-#define SAMPLESIZE 5
+#define SAMPLESIZE 20
 
 #define POTENCIA_BT ESP_PWR_LVL_P9
 
@@ -36,9 +32,14 @@ const float ZERO_REFERENCE_PA = 100.0f; // Referencia provisoria para testar a U
 #define OTA_CONTROL_UUID "3bcdff28-47fc-4a87-9684-7672c49d9266"
 #define OTA_DATA_UUID "3bcdff29-47fc-4a87-9684-7672c49d9266"
 
-// MPX5010DP nominal: Vout / Vs = 0.09 * P[kPa] + 0.04
+// Parâmetros do Sensor
+const float Vmin = 0.5;
+const float Vmax = 4.5;
+const float Pmin = -5000.0;
+const float Pmax = 5000.0;
 const float RAZAO_DIV_TENSAO = (R1 + R2) / R2;
-const float deadbandThreshold = 15.0f; // Experimental, ajustavel apos teste
+const float RAZAO_ESCALA_PRESSAO = (Pmax - Pmin) / (Vmax - Vmin);
+const float deadbandThreshold = 15.0; // Deadband em Pascals
  
 // Controle do loop
 unsigned long lastNotifyTime = 0;
@@ -48,8 +49,7 @@ BLECharacteristic* pCharacteristic;
 bool deviceConnected = false;
 bool isCalibrated = false;
 bool isSampling = false;
-float calibrationOffsetPa = ZERO_REFERENCE_PA;
-bool recalibrateZero = false;  // Comando c: recalibra repouso real
+float calibrationOffsetPa = 0.0;
 
 #if MOVING_AVERAGE
 int indexMovingAverage = 0;
@@ -63,22 +63,18 @@ bool emaInitialized = false;
 // Prototipos
 float ReadRawPressurePa();
 void Calibrate();
-float voutToPa();
+float voutToPa(int adcReading);
 void ListenCommand(char cmd);
 
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     deviceConnected = true;
-#if DEBUG
     Serial.println("Client connected");
-#endif
   }
   
   void onDisconnect(BLEServer* pServer) {
     deviceConnected = false;
-#if DEBUG
     Serial.println("Cliente disconectado, reiniciando advertising...");
-#endif
     pServer->getAdvertising()->start();
   }
 };
@@ -194,9 +190,7 @@ void setup() {
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->start();
 
-#if DEBUG
   Serial.println("BLE service started, waiting for client...");
-#endif
 }
 
 void loop() {
@@ -219,10 +213,11 @@ void loop() {
     }
 
     if (isSampling && isCalibrated) {
+      float rawPa = ReadRawPressurePa();
       unsigned long now = millis();
+
       if (now - lastNotifyTime >= notifyInterval) {
         lastNotifyTime = now;
-        float rawPa = ReadRawPressurePa(); // filtro atualizado em 20 Hz
 
         float calibratedPa = rawPa - calibrationOffsetPa;
         
@@ -260,16 +255,14 @@ void ListenCommand(char cmd) {
   } else if (cmd == 'f' || cmd == 'F') {
     isSampling = false;
     isCalibrated = false;
-    recalibrateZero = false;
   } else if (cmd == 'c' || cmd == 'C') {
-    recalibrateZero = true;
     isCalibrated = false;
   }
 }
 
 // Retorna a pressão lida com filtro mas sem calibração e deadband
 float ReadRawPressurePa() {
-  float newVal = voutToPa();
+  float newVal = voutToPa(analogRead(PORT_SENSOR));
 
 #if MOVING_AVERAGE
   sum -= vals[indexMovingAverage];
@@ -297,41 +290,44 @@ float ReadRawPressurePa() {
 }
 
 void Calibrate() {
-  // Primeira execucao: zero logico fixo 100 Pa.
-  // Apos comando 'c': determina o zero real com tubo em repouso.
-  if (recalibrateZero) {
-    const int N = 60;
-    float somaPa = 0.0f;
-    for (int i = 0; i < N; ++i) {
-      somaPa += voutToPa();
-      delay(20); // ~1,2 s sem soprar ou inspirar
-    }
-    calibrationOffsetPa = somaPa / N;
-  } else {
-    calibrationOffsetPa = ZERO_REFERENCE_PA;
-  }
-  recalibrateZero = false;
-
-  // Reinicia o filtro para evitar arrastar dados da ultima sessao.
-  float inicial = voutToPa();
+  float rawReading = voutToPa(analogRead(PORT_SENSOR));
+  
+  // preenchendo o buffer com valores iniciais
 #if MOVING_AVERAGE
-  sum = inicial * SAMPLESIZE;
+  for (int i = 0; i < SAMPLESIZE; i++) {
+    vals[i] = rawReading;
+  }
+  sum = rawReading * SAMPLESIZE;
   indexMovingAverage = 0;
-  for (int i = 0; i < SAMPLESIZE; ++i) vals[i] = inicial;
 #endif
-  emaValue = inicial;
+
+  emaValue = rawReading;
   emaInitialized = true;
+
+  // leitura inicial
+  for (int i = 0; i < SAMPLESIZE; i++) {
+    ReadRawPressurePa();
+    yield(); 
+  }
+  
+  float currentSum = 0.0;
+  // tirando a média real
+  for (int i = 0; i < SAMPLESIZE; i++) {
+    currentSum += ReadRawPressurePa();
+    yield();
+  }
+
+  calibrationOffsetPa = currentSum / SAMPLESIZE;
   isCalibrated = true;
-#if DEBUG
   Serial.printf("Calibrado. Offset (Pa): %.2f\n", calibrationOffsetPa);
-#endif
 }
 
-float voutToPa() {
-  // analogReadMilliVolts ja usa a calibracao disponivel do ADC no core.
-  const float adcVoltage = analogReadMilliVolts(PORT_SENSOR) / 1000.0f;
-  const float sensorVoltage = adcVoltage * RAZAO_DIV_TENSAO;
-  const float pressaoKPa = (sensorVoltage / MPX_SUPPLY_V - 0.04f) / 0.09f;
-  // A faixa negativa calculada nao e medida diferencial negativa validada.
-  return pressaoKPa * 1000.0f;
+float voutToPa(int adcReading) {
+  float adcVoltage = (adcReading / 4095.0) * 3.3;
+  float sensorVoltage = adcVoltage * RAZAO_DIV_TENSAO;
+
+  if (sensorVoltage < Vmin) sensorVoltage = Vmin;
+  else if (sensorVoltage > Vmax) sensorVoltage = Vmax;
+
+  return Pmin + (sensorVoltage - Vmin) * RAZAO_ESCALA_PRESSAO;
 }
