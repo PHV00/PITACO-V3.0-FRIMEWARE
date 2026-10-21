@@ -8,9 +8,47 @@ comprovam medicao fisica inspiratoria negativa pelo MPX5010DP.
 ## Arquivos
 
 - arduino-pitaco-mpx5010dp-unity.ino: firmware de teste ESP32-C3 com USB e BLE.
-- ble_client_mpx5010dp.py: novo cliente Python para validar BLE e fazer ponte para Unity.
+- ble_client_mpx5010dp.py: interface grafica baseada no PITACO Bridge original, com BLE e Cabo USB.
 - O cliente GUI antigo, na pasta arduino-pitaco-ble, permanece **inalterado**.
   Ele usa uma estimativa de fluxo baseada em orificio; nao confundir com Pa.
+
+## GUI do MPX5010DP - caminho prioritario (USB)
+
+Agora o arquivo ble_client_mpx5010dp.py e uma COPIA ADAPTADA da interface
+grafica legada, nao mais um programa de terminal.
+O original arduino-pitaco-ble/ble_client_gui.py permanece intacto.
+
+Na pasta do novo arquivo (Windows), instale as dependencias da GUI original,
+por exemplo: customtkinter, pyserial, wmi, pywin32, bleak, pillow, matplotlib
+e esptool. Use Python compatível com o ambiente original.
+
+    python ble_client_mpx5010dp.py
+
+Para testar SEM Unity: selecionar "Cabo USB", Porta ESP32 (USB) = COM3
+(ou a porta fisica correta), Porta Jogo = "Somente monitor" e clicar Conectar.
+A GUI envia e/r automaticamente quando monitorando sem jogo.
+Fechar o Monitor Serial antes de abrir a GUI; uma COM so pode ter um dono.
+
+A GUI recebe pressao relativa assinada em Pa, como fornecida pelo firmware.
+A conversao ADC->tensao->Pa continua exclusivamente no ESP32.
+"Saída ao jogo" tem dois modos: "Pressão relativa (Pa)" (padrao e preferido
+para a primeira verificacao) ou "Fluxo estimado (L/min)" (modelo legado ainda
+nao validado fisicamente).
+
+O grafico e as funcoes historicas de perfil/fluxo continuam da GUI legada.
+Exibir estimativa de fluxo NAO significa que esteja clinicamente calibrada.
+A configuracao nova e salva separadamente em config_mpx5010dp.json.
+A GUI nao instala com0com nem eleva UAC automaticamente.
+
+Para usar com Unity por cabo mais tarde: selecionar um par COM virtual
+com0com funcional. A GUI abre COM3 fisica (ESP32) e UMA ponta do par;
+Unity abre a ponta oposta, nao COM3 nem a porta ja usada pela GUI.
+
+## Roteiro antigo de terminal (substituido)
+
+As opcoes de terminal --seconds / --calibrate / --bridge-port
+da versao anterior deste novo arquivo nao se aplicam mais.
+Use a interface grafica.
 
 ## Preparacao
 
