@@ -3,6 +3,7 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 #include <Update.h>
+#include <math.h>
 
 // PITACO 2.0 - teste de integracao MPX5010DP + ESP32-C3
 // Valores negativos representam variacao sob a referencia, NAO pressao
@@ -50,6 +51,16 @@ bool isCalibrated = false;
 bool isSampling = false;
 float calibrationOffsetPa = ZERO_REFERENCE_PA;
 bool recalibrateZero = false;  // Comando c: recalibra repouso real
+// Referencia dinamica preservada em RAM entre comandos e/r/f ate reinicio.
+bool zeroReferenceValid = false;
+bool zeroInProgress = false;
+unsigned long zeroStartMs = 0;
+unsigned long zeroLastSampleMs = 0;
+unsigned int zeroCount = 0;
+double zeroAccumPa = 0.0;
+const unsigned long ZERO_WINDOW_MS = 10000UL;
+const unsigned long ZERO_SAMPLE_INTERVAL_MS = 50UL;
+const unsigned int ZERO_MIN_SAMPLES = 150;
 
 #if MOVING_AVERAGE
 int indexMovingAverage = 0;
@@ -65,6 +76,10 @@ float ReadRawPressurePa();
 void Calibrate();
 float voutToPa();
 void ListenCommand(char cmd);
+void ResetPressureFilter();
+void SendStatus(const char* line);
+void StartTenSecondZero();
+void PollTenSecondZero();
 
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
@@ -213,6 +228,12 @@ void loop() {
   isSampling = true;
 #endif
 
+  // Nao emitir leituras enquanto calcula o zero; usar Pa sem filtros.
+  if (zeroInProgress) {
+    PollTenSecondZero();
+    yield();
+    return;
+  }
   if (deviceConnected || isSampling) {
     if (isSampling && !isCalibrated) {
       Calibrate();
@@ -249,6 +270,7 @@ void loop() {
 
 void ListenCommand(char cmd) {
   if (cmd == 'e' || cmd == 'E') {
+    if (zeroInProgress) zeroInProgress = false; // handshake tem prioridade
     if (isSampling) {
       isSampling = false;
       isCalibrated = false;
@@ -264,6 +286,65 @@ void ListenCommand(char cmd) {
   } else if (cmd == 'c' || cmd == 'C') {
     recalibrateZero = true;
     isCalibrated = false;
+  } else if (cmd == 'z' || cmd == 'Z') {
+    StartTenSecondZero();
+  }
+}
+
+void SendStatus(const char* line) {
+  Serial.print(line);
+  if (deviceConnected) {
+    pCharacteristic->setValue(line);
+    pCharacteristic->notify();
+  }
+}
+
+void ResetPressureFilter() {
+  const float inicial = voutToPa();
+#if MOVING_AVERAGE
+  sum = inicial * SAMPLESIZE;
+  indexMovingAverage = 0;
+  for (int i = 0; i < SAMPLESIZE; ++i) vals[i] = inicial;
+#endif
+  emaValue = inicial;
+  emaInitialized = true;
+}
+
+void StartTenSecondZero() {
+  if (zeroInProgress || isOtaUpdating) return;
+  zeroInProgress = true;
+  zeroStartMs = millis();
+  zeroLastSampleMs = zeroStartMs;
+  zeroCount = 0;
+  zeroAccumPa = 0.0;
+  SendStatus("zero_start\n");
+}
+
+void PollTenSecondZero() {
+  const unsigned long now = millis();
+  if (now - zeroLastSampleMs >= ZERO_SAMPLE_INTERVAL_MS) {
+    zeroLastSampleMs = now;
+    const float readingPa = voutToPa();
+    if (isfinite(readingPa)) {
+      zeroAccumPa += readingPa;
+      ++zeroCount;
+    }
+  }
+  if (now - zeroStartMs >= ZERO_WINDOW_MS) {
+    zeroInProgress = false;
+    if (zeroCount < ZERO_MIN_SAMPLES) {
+      SendStatus("zero_error\n");
+      return; // Preserva a referencia anterior.
+    }
+    calibrationOffsetPa = (float)(zeroAccumPa / zeroCount);
+    zeroReferenceValid = true;
+    recalibrateZero = false;
+    ResetPressureFilter();
+    isCalibrated = true;
+
+    char reply[40];
+    snprintf(reply, sizeof(reply), "zero_done:%.2f\n", calibrationOffsetPa);
+    SendStatus(reply);
   }
 }
 
@@ -307,20 +388,15 @@ void Calibrate() {
       delay(20); // ~1,2 s sem soprar ou inspirar
     }
     calibrationOffsetPa = somaPa / N;
-  } else {
+    zeroReferenceValid = true;
+  } else if (!zeroReferenceValid) {
+    // Referencia fixa apenas enquanto nao houver calibracao real.
     calibrationOffsetPa = ZERO_REFERENCE_PA;
   }
   recalibrateZero = false;
 
-  // Reinicia o filtro para evitar arrastar dados da ultima sessao.
-  float inicial = voutToPa();
-#if MOVING_AVERAGE
-  sum = inicial * SAMPLESIZE;
-  indexMovingAverage = 0;
-  for (int i = 0; i < SAMPLESIZE; ++i) vals[i] = inicial;
-#endif
-  emaValue = inicial;
-  emaInitialized = true;
+  // Mantem referencia dinamica apos parada/reconexao da Unity.
+  ResetPressureFilter();
   isCalibrated = true;
 #if DEBUG
   Serial.printf("Calibrado. Offset (Pa): %.2f\n", calibrationOffsetPa);
