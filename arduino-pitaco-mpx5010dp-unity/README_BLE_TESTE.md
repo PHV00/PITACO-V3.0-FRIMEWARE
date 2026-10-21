@@ -114,3 +114,24 @@ NAO fluxo metrologicamente calibrado.
 
 Apenas sintaxe Python e decodificador foram testados sem hardware.
 O teste efetivo com ESP32-C3 e Windows ainda precisa ser realizado.
+
+
+## Calibracao do zero durante 10 segundos (firmware atualizado)
+
+Na GUI, conectar por Cabo USB ao ESP32 (COM fisica) e clicar **Zerar (10 s)**.
+Manter sensor e mangueiras imoveis, sem inspirar ou expirar no tubo.
+O botao envia `z` ao firmware; o firmware amostra a pressao sem filtro
+a cada 50ms por 10s, calcula o valor medio e o utiliza como referencia
+para a pressao relativa. Nao envia leituras numericas durante a coleta.
+Respostas: `zero_start`, `zero_done:<Pa>` ou `zero_error`.
+
+**Obrigatorio regravar o novo .ino no ESP32**: atualizar so a GUI Python
+nao habilita o comando z no firmware antigo.
+
+A referencia calibrada dura ate reiniciar/religar o ESP32; o comando e/r/f
+nao deve apagar essa referencia. Esse procedimento de zero experimental
+nao valida medico-clinicamente o valor de pressao, a medicão de
+inspiracao negativa, a estimativa de fluxo ou estabilidade ao longo do tempo.
+
+O botao antigo "Calibrar Sensor" mantem o comando `c`, de janela curta;
+o novo "Zerar (10 s)" e a rotina prioritaria para testes de zero.
