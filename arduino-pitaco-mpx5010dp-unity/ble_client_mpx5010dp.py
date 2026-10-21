@@ -729,46 +729,79 @@ graph_btn.pack(pady=2)
 calib_btn = ctk.CTkButton(tools_frame, text="Calibrar Sensor", width=100, state="disabled", command=lambda: send_ble_command('c'))
 calib_btn.pack(pady=2)
 
+# A GUI aguarda confirmacao do firmware em duas fases:
+# 1. zero_start ate 3 s apos enviar z; 2. zero_done ate 14 s apos o ACK.
+# O clique nao e uma confirmacao do dispositivo.
 zero_active = False
+zero_waiting_ack = False
 zero_deadline = 0.0
 
 def zero_status(message):
-    global zero_active, zero_deadline
+    global zero_active, zero_waiting_ack, zero_deadline
     if message == "zero_start":
+        zero_waiting_ack = False
         zero_active = True
-        zero_deadline = time.monotonic() + 13.0
+        zero_deadline = time.monotonic() + 14.0
         zero_btn.configure(text="Zerando 10s", state="disabled")
-        log("[ZERO] Iniciado: manter dispositivo em repouso por 10 segundos.")
-    elif message.startswith("zero_done:") or message == "zero_error":
+        log("[ZERO] Confirmado pelo ESP32: coleta de 10 s iniciada. Mantenha em repouso.")
+    elif message.startswith("zero_done:"):
+        zero_waiting_ack = False
         zero_active = False
         zero_deadline = 0.0
         zero_btn.configure(text="Zerar (10 s)", state="normal")
-        if message.startswith("zero_done:"):
-            pressure_filter.reset()
-            log("[ZERO] Referencia aplicada no ESP32 (Pa): " + message.partition(":")[2])
-        else:
-            log("[ZERO] Erro: mantendo referencia anterior.")
+        pressure_filter.reset()
+        log("[ZERO] Concluido no ESP32. Novo offset (Pa): " + message.partition(":")[2])
+    elif message.startswith("zero_error"):
+        zero_waiting_ack = False
+        zero_active = False
+        zero_deadline = 0.0
+        zero_btn.configure(text="Zerar (10 s)", state="normal")
+        log("[ZERO] Firmware reportou falha: " + message + ". Referencia anterior preservada.")
+    elif message == "zero_cancelled":
+        zero_waiting_ack = False
+        zero_active = False
+        zero_deadline = 0.0
+        zero_btn.configure(text="Zerar (10 s)", state="normal")
+        log("[ZERO] Interrompido pelo comando de identificacao e (Unity).")
 
 def start_zero():
-    if not running or zero_active:
+    global zero_active, zero_waiting_ack, zero_deadline
+    if not running or zero_active or zero_waiting_ack:
         return
-    zero_status("zero_start")
+    connected_usb = (conn_mode_var.get() == "Cabo USB"
+                     and ser_device is not None and ser_device.is_open)
+    connected_ble = (conn_mode_var.get() == "Bluetooth"
+                     and client is not None and client.is_connected)
+    if not (connected_usb or connected_ble):
+        log("[ZERO] Dispositivo nao conectado: comando z nao enviado.")
+        return
+    zero_waiting_ack = True
+    zero_deadline = time.monotonic() + 3.0
+    zero_btn.configure(state="disabled", text="Aguardando ESP32")
+    log("[ZERO] Enviando comando z; aguardando confirmacao zero_start.")
     send_ble_command("z")
 
 def zero_tick():
-    if zero_active:
+    global zero_active, zero_waiting_ack, zero_deadline
+    if zero_waiting_ack and time.monotonic() >= zero_deadline:
+        zero_waiting_ack = False
+        zero_btn.configure(text="Zerar (10 s)", state="normal")
+        log("[ZERO] Sem resposta zero_start. Verifique se o firmware com comando z foi gravado.")
+    elif zero_active:
         remaining = zero_deadline - time.monotonic()
         if remaining <= 0:
-            zero_status("zero_error")
-            log("[ZERO] Sem confirmacao: verifique o firmware instalado.")
+            zero_active = False
+            zero_btn.configure(text="Zerar (10 s)", state="normal")
+            log("[ZERO] ESP32 iniciou a calibracao mas nao enviou zero_done/zero_error.")
+            log("[ZERO] Confira cabos/porta e se Unity enviou e durante a calibracao.")
         else:
-            zero_btn.configure(text=f"Zerando {min(10, int(remaining))}s")
+            # 14s inclui margem para entrega. Temporizador visual de 10s.
+            zero_btn.configure(text=f"Zerando {min(10, max(0, int(remaining - 4)))}s")
     root.after(250, zero_tick)
 
 zero_btn = ctk.CTkButton(tools_frame, text="Zerar (10 s)", width=100, state="disabled", command=start_zero)
 zero_btn.pack(pady=2)
 root.after(250, zero_tick)
-
 
 # Logs
 log_box = ctk.CTkTextbox(root, height=120)
@@ -1754,7 +1787,7 @@ def notification_handler(sender, data):
                 line_str = buffer.decode('ascii').strip()
                 
                 if line_str.startswith("zero_"):
-                    root.after(0, lambda msg=line_str: zero_status(msg))
+                    root.after(0, lambda msg=line_str: (log("[BLE <- ESP32] " + msg), zero_status(msg)))
                 elif line_str == "echop":
                     if ser and ser.is_open:
                         ser.write(b"echop\r\n")
@@ -1852,7 +1885,7 @@ def usb_read_device_loop():
                     if byte == ord('\n'):
                         line_str = usb_buffer.decode('ascii', errors='ignore').strip()
                         if line_str.startswith("zero_"):
-                            root.after(0, lambda msg=line_str: zero_status(msg))
+                            root.after(0, lambda msg=line_str: (log("[USB <- ESP32] " + msg), zero_status(msg)))
                         elif line_str == "echop":
                             if ser and ser.is_open:
                                 ser.write(b"echop\r\n")
