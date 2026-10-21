@@ -694,15 +694,20 @@ def send_ble_command(cmd):
     elif cmd_lower == 'c':
         pressure_filter.reset()
 
-    if client and client.is_connected and ble_loop:
+    if conn_mode_var.get() == "Cabo USB" and ser_device and ser_device.is_open:
+        try:
+            ser_device.write(cmd.encode('ascii'))
+            log(f"[USB] Comando '{cmd}' enviado.")
+        except Exception as exc:
+            log(f"[USB] Erro: {exc}")
+    elif client and client.is_connected and ble_loop:
         try:
             asyncio.run_coroutine_threadsafe(
-                client.write_gatt_char(CHARACTERISTIC_UUID, cmd.encode('ascii'), False),
-                ble_loop
-            )
-            log(f"Comando '{cmd}' enviado.")
-        except Exception as e:
-            log(f"Erro ao enviar comando '{cmd}': {e}")
+                client.write_gatt_char(CHARACTERISTIC_UUID, cmd.encode('ascii'), response=True),
+                ble_loop)
+            log(f"[BLE] Comando '{cmd}' enviado.")
+        except Exception as exc:
+            log(f"[BLE] Erro: {exc}")
 
 def open_graph():
     global is_plotting
@@ -723,6 +728,47 @@ graph_btn.pack(pady=2)
 
 calib_btn = ctk.CTkButton(tools_frame, text="Calibrar Sensor", width=100, state="disabled", command=lambda: send_ble_command('c'))
 calib_btn.pack(pady=2)
+
+zero_active = False
+zero_deadline = 0.0
+
+def zero_status(message):
+    global zero_active, zero_deadline
+    if message == "zero_start":
+        zero_active = True
+        zero_deadline = time.monotonic() + 13.0
+        zero_btn.configure(text="Zerando 10s", state="disabled")
+        log("[ZERO] Iniciado: manter dispositivo em repouso por 10 segundos.")
+    elif message.startswith("zero_done:") or message == "zero_error":
+        zero_active = False
+        zero_deadline = 0.0
+        zero_btn.configure(text="Zerar (10 s)", state="normal")
+        if message.startswith("zero_done:"):
+            pressure_filter.reset()
+            log("[ZERO] Referencia aplicada no ESP32 (Pa): " + message.partition(":")[2])
+        else:
+            log("[ZERO] Erro: mantendo referencia anterior.")
+
+def start_zero():
+    if not running or zero_active:
+        return
+    zero_status("zero_start")
+    send_ble_command("z")
+
+def zero_tick():
+    if zero_active:
+        remaining = zero_deadline - time.monotonic()
+        if remaining <= 0:
+            zero_status("zero_error")
+            log("[ZERO] Sem confirmacao: verifique o firmware instalado.")
+        else:
+            zero_btn.configure(text=f"Zerando {min(10, int(remaining))}s")
+    root.after(250, zero_tick)
+
+zero_btn = ctk.CTkButton(tools_frame, text="Zerar (10 s)", width=100, state="disabled", command=start_zero)
+zero_btn.pack(pady=2)
+root.after(250, zero_tick)
+
 
 # Logs
 log_box = ctk.CTkTextbox(root, height=120)
@@ -1707,7 +1753,9 @@ def notification_handler(sender, data):
             if byte == ord('\n'):
                 line_str = buffer.decode('ascii').strip()
                 
-                if line_str == "echop":
+                if line_str.startswith("zero_"):
+                    root.after(0, lambda msg=line_str: zero_status(msg))
+                elif line_str == "echop":
                     if ser and ser.is_open:
                         ser.write(b"echop\r\n")
                 else:
@@ -1803,7 +1851,9 @@ def usb_read_device_loop():
                 for byte in data:
                     if byte == ord('\n'):
                         line_str = usb_buffer.decode('ascii', errors='ignore').strip()
-                        if line_str == "echop":
+                        if line_str.startswith("zero_"):
+                            root.after(0, lambda msg=line_str: zero_status(msg))
+                        elif line_str == "echop":
                             if ser and ser.is_open:
                                 ser.write(b"echop\r\n")
                         else:
@@ -1854,6 +1904,7 @@ async def ble_bridge():
         
         root.after(0, lambda: set_indicator(status_ble, True))
         root.after(0, lambda: calib_btn.configure(state="normal"))
+        root.after(0, lambda: zero_btn.configure(state="normal"))
         root.after(0, lambda: graph_btn.configure(state="normal"))
 
         await client.start_notify(CHARACTERISTIC_UUID, notification_handler)
@@ -1877,6 +1928,7 @@ async def ble_bridge():
     finally:
         root.after(0, lambda: set_indicator(status_ble, False))
         root.after(0, lambda: calib_btn.configure(state="disabled"))
+        root.after(0, lambda: zero_btn.configure(state="disabled"))
         root.after(0, lambda: graph_btn.configure(state="disabled"))
 
 def start_bridge():
@@ -1936,6 +1988,7 @@ def start_bridge():
                 log(f"Conectado ao ESP32 via USB na porta física {dev_port}.")
                 set_indicator(status_ble, True)
                 calib_btn.configure(state="normal")
+                zero_btn.configure(state="normal")
                 graph_btn.configure(state="normal")
                 threading.Thread(target=usb_read_device_loop, daemon=True).start()
                 if not (ser and ser.is_open):
@@ -1970,6 +2023,7 @@ def stop_bridge():
     device_port_combo.configure(state="normal")
     conn_mode_segmented.configure(state="normal")
     calib_btn.configure(state="disabled")
+    zero_btn.configure(state="disabled")
     graph_btn.configure(state="disabled")
     set_indicator(status_serial, False)
     set_indicator(status_ble, False)
