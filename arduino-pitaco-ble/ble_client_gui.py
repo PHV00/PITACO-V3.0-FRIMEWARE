@@ -697,19 +697,48 @@ def send_ble_command(cmd):
         except Exception as e:
             log(f"Erro ao enviar comando '{cmd}': {e}")
 
+def send_graph_command(cmd):
+    global is_sampling
+
+    if conn_mode_var.get() == "Cabo USB":
+        if not (ser_device and ser_device.is_open):
+            log("[USB] ESP32 nao conectado.")
+            return
+
+        try:
+            ser_device.write(cmd.encode("ascii"))
+
+            if cmd == "r":
+                is_sampling = True
+                pressure_filter.reset()
+            elif cmd == "f":
+                is_sampling = False
+
+            log(f"[USB] Comando '{cmd}' enviado.")
+
+        except Exception as e:
+            log(f"[USB] Erro ao enviar '{cmd}': {e}")
+
+    else:
+        send_ble_command(cmd)
+
+
 def open_graph():
     global is_plotting
     is_plotting = True
     plot_window.deiconify()
     graph_btn.configure(state="disabled")
-    send_ble_command('r') # Pede leitura de dados
+    send_graph_command('r')
+    #send_ble_command('r') # Pede leitura de dados
+
 
 def close_graph():
     global is_plotting
     is_plotting = False
     plot_window.withdraw()
     graph_btn.configure(state="normal")
-    send_ble_command('f') # Para a leitura de dados
+    send_graph_command('f')
+    #send_ble_command('f') # Para a leitura de dados
 
 graph_btn = ctk.CTkButton(tools_frame, text="Abrir Grafico", width=100, state="disabled", command=open_graph)
 graph_btn.pack(pady=2)
@@ -1685,10 +1714,11 @@ def update_plot(frame):
             ax2.set_ylim(flow_to_pressure(f_lower), flow_to_pressure(f_upper))
         else:
             ax2.yaxis.set_visible(False) 
-        canvas.draw()
+        #canvas.draw()
     return line_flow,
 
-ani = animation.FuncAnimation(fig, update_plot, interval=50, blit=False, cache_frame_data=False)
+# ani = animation.FuncAnimation(fig, update_plot, interval=50, blit=False, cache_frame_data=False)
+ani = animation.FuncAnimation(fig, update_plot, interval=200, blit=False, cache_frame_data=False)
 
 # --- LOGICA DE COMUNICACAO ---
 buffer = bytearray()
