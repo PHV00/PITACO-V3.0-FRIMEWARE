@@ -4,7 +4,7 @@
 #include <BLE2902.h>
 #include <Update.h>
 #include <math.h>
-#include "ppg_max30102.h"  // PITACO 2.4: MAX30102 + SQI Gate 01
+#include "ppg_max30105.h"  // PITACO 2.4: MAX30105 + SQI Gate 01
 
 // PITACO 2.0 - teste de integracao MPX5010DP + ESP32-C3
 // Valores negativos representam variacao sob a referencia, NAO pressao
