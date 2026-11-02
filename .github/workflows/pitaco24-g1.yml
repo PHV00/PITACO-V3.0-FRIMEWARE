@@ -1,0 +1,18 @@
+name: PITACO 2.4 SQI Gate 01 host tests
+on:
+  push:
+    branches: [feature/pitaco-24-max30102-g1]
+  pull_request:
+    paths:
+      - 'arduino-pitaco-mpx5010dp-unity/sqi_gate1.*'
+      - 'arduino-pitaco-mpx5010dp-unity/tests/**'
+jobs:
+  g1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Teste de falhas G1
+        run: |
+          cd arduino-pitaco-mpx5010dp-unity
+          g++ -std=c++11 -Wall -Wextra -Werror -I. sqi_gate1.cpp tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1
+          /tmp/pitaco_g1
