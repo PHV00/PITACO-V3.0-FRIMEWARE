@@ -561,7 +561,9 @@ void PollMAX30105() {
 
     // checkForBeat(IR) da SparkFun: BPM e estimativa experimental.
     // Nunca fornecer BPM como valido antes de G1 PASS.
-    if (ir > 5000 && checkForBeat(ir)) {
+    // SparkFun heartRate.cpp utiliza uint16_t e int16_t internamente.
+    // Normalizar 18-bit -> 15-bit apenas para BPM: RAW permanece 18-bit.
+    if (ir > 5000 && checkForBeat((int32_t)(ir >> 3))) {
       if (lastBeatMs > 0) {
         const unsigned long delta = receiveMs - lastBeatMs;
         if (delta >= 300 && delta <= 1714) {  // 35 a 200 BPM

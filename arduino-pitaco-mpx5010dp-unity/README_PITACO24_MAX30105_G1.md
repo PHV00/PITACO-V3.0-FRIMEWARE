@@ -71,7 +71,12 @@ continuam na characteristic BLE original.
 
 ## BPM e SpO2
 
-O BPM do firmware deriva de checkForBeat(IR), presente na SparkFun. Depende
+O BPM do firmware deriva de checkForBeat(IR), presente na SparkFun. O
+RAW IR de 18 bits e reduzido por deslocamento de 3 bits apenas na entrada
+do detector: o codigo da biblioteca usa uint16_t/int16_t internamente.
+Os valores RAW originais de 18 bits seguem intactos no JSON e no G1.
+O escalonamento do detector e experimental e precisa de teste no dedo.
+Depende
 de detectar pulsos plausiveis e de G1 PASS. E um VALOR EXPERIMENTAL,
 nao validado clinicamente para MAX30105. Nao confundir deteccao de pulso
 com estimativa clinica de frequencia cardiaca.
