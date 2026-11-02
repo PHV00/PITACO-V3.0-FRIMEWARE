@@ -66,6 +66,53 @@ Depois testar `f`/`r` em sequencia, ciclo `z`, sessao prolongada
 (2-5 min) e BLE ativo, verificando overflow e sequencias. Nao alterar
 os thresholds G1 sem observar distribuicao de RED/IR e evidencias.
 
+## Validacao USB com protocolo de contato — 60 s (02/11/2026)
+
+Ensaio com `python .\\pitaco24_ppg_probe.py COM3 --seconds 60 --csv ppg_contato_60s.csv`.
+O relatorio abaixo e baseado no log de status e G1 fornecido em conversa;
+o CSV com RED/IR/BPM ainda nao foi disponibilizado para analise.
+
+```text
+X,PPG_PRESTART,ovf=0,wr=0,rd=0
+X,PPG_SENSOR_AWAKE,mode=03
+X,PPG_STATE,COLLECTING
+G1 1  PASS      samples=125
+G1 2  PASS      samples=124
+G1 3  PASS      samples=125
+G1 4  PASS      samples=125
+G1 5  RED_LOW   samples=125
+G1 6  RED_LOW   samples=125
+G1 7  PASS      samples=125
+G1 8  PASS      samples=125
+G1 9  IR_FLAT   samples=125
+G1 10 PASS      samples=125
+G1 11 PASS      samples=125
+Amostras PPG 1498 janelas G1 11 saltos de sequencia 0
+```
+
+Observacoes:
+- 1498 pares/60 s = ~24,97 Hz, proximo dos 25 Hz efetivos esperados.
+- Todos os logs periodicos de FIFO apresentaram `ovf=0`; contagens de
+  `novas` e `processadas` foram equivalentes (49 ou 50 por 2 s).
+- Zero gaps de seq no monitor USB; nao se deve estender esta conclusao
+  ao transporte BLE sem teste proprio.
+- 8/11 janelas G1 PASS, duas `reason=2` (RED_LOW) e uma `reason=5`
+  (IR_FLAT). Todas as janelas continham 124 ou 125 registros.
+- Se o protocolo de fases de 15 s (dedo, sem dedo, dedo, movimento)
+  foi seguido pontualmente, a janela 4 PASS coincide aproximadamente
+  com a fase sem dedo; isto sugere **falso PASS ou latencia de deteccao**,
+  nao uma conclusao definitiva sem amostras brutas e marcadores reais.
+- A janela 9 IR_FLAT recai aproximadamente na fase de recolocacao
+  quando usamos as fases planejadas; nao atribuir automaticamente a movimento.
+- No Gate 01 atual, `g1Evaluate()` usa media dos canais e amplitude
+  min/max por 5 s; nao existe detector especifico de contato.
+  Uma janela PASS nao comprova pulsatilidade ou contato anatomico adequado.
+
+**Decisao:** preservar firmware, thresholds G1 e maquina STOPPED/COLLECTING
+nesta iteracao. Solicitar `ppg_contato_60s.csv`, analisar canais,
+BPM, variacao, timestamps e as transicoes de cada fase antes de implementar
+um mecanismo rapido de presenca de dedo ou alterar o Gate 01.
+
 ## Politica nova
 
 ```text
