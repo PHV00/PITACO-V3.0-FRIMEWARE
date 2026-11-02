@@ -580,7 +580,7 @@ void PollMAX30105() {
   const uint8_t ovf = max30105.readRegister8(0x57, 0x05);
   if (ovf > 0) {
     g1MarkAcquisitionGap();
-    Serial.printf("X,PPG_FIFO_OVERFLOW,ovf=%u\\n", (unsigned)ovf);
+    Serial.printf("X,PPG_FIFO_OVERFLOW,ovf=%u\n", (unsigned)ovf);
   }
 
   // A SparkFun ainda possui um buffer circular de apenas 4 posicoes.
@@ -592,7 +592,7 @@ void PollMAX30105() {
     // O check() leu mais do que o anel interno conseguiu preservar.
     // Registra perda explicitamente para evitar falsos PASS do Gate 01.
     g1MarkAcquisitionGap();
-    Serial.printf("X,PPG_SW_RING_OVERRUN,novas=%u,disponiveis=%u\\n",
+    Serial.printf("X,PPG_SW_RING_OVERRUN,novas=%u,disponiveis=%u\n",
                   (unsigned)novos, (unsigned)disponiveis);
   }
 
@@ -666,7 +666,7 @@ void PollMAX30105() {
     const uint8_t wr = max30105.getWritePointer();
     const uint8_t rd = max30105.getReadPointer();
     Serial.printf(
-      "X,PPG_DIAG,novas=%lu,processadas=%lu,wr=%u,rd=%u,ovf=%u\\n",
+      "X,PPG_DIAG,novas=%lu,processadas=%lu,wr=%u,rd=%u,ovf=%u\n",
       (unsigned long)ppgDiagFound, (unsigned long)ppgDiagProcessed,
       (unsigned)wr, (unsigned)rd,
       (unsigned)max30105.readRegister8(0x57, 0x05));
