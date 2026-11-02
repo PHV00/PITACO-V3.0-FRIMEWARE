@@ -33,6 +33,36 @@ Setup MAX30105: 100 Hz configurados, FIFO-average=4 (~25 amostras/s
 efetivas), dois LEDs RED+IR, green desligado, largura 411 us (18 bits).
 O MAX30105 nao e um oximetro medico certificado; seu uso aqui e pesquisa.
 
+## Controle de aquisicao e integridade FIFO
+
+O MAX30105 opera em dois estados para impedir o problema de bancada
+`ovf=31,wr=0,rd=0,novas=0,G1 NO_SAMPLES`:
+
+- **STOPPED**: ao ligar e quando `isSampling` e falso, durante `z`
+  (zero da pressao) ou durante OTA, o chip entra em `shutDown()`;
+  conserva I2C ativo, mas nao produz amostras opticas.
+- **COLLECTING**: apos `r`, com pressao calibrada, o chip passa por
+  `wakeUp()`; a FIFO e reinicializada **uma vez na transicao** para
+  remover dados obsoletos do estado parado. O loop chama `check()`,
+  processa todos os pares RED/IR disponiveis em G1/BPM e os transmite.
+- **STOPPED novamente**: `f`, `e` (handshake que interrompe sessao),
+  `z` e OTA fazem o chip parar. A janela G1 parcial e descartada
+  deliberadamente no comando de parada.
+- **Falha real de FIFO**: `ovf>0` marca `GAP` no G1; processa primeiro
+  as amostras ainda recuperaveis e so entao `clearFIFO()` reabilita
+  a aquisicao. `novas>disponiveis` identifica perda no pequeno buffer
+  circular de software da SparkFun e tambem invalida a janela.
+
+Status USB: `X,PPG_STATE,STOPPED`, `X,PPG_STATE,COLLECTING`,
+`X,PPG_FIFO_OVERFLOW`, `X,PPG_FIFO_RECOVERED`,
+`X,PPG_SW_RING_OVERRUN` e `X,PPG_DIAG` (contagem a cada 2 s).
+O diagnostico periodico pode ser desabilitado com `#define PPG_DIAG false`.
+
+**Importante:** esta implementacao conserva os dois arquivos `.ino` e a
+comunicacao legada. Nao resolve por si so eventuais bloqueios ou baixa
+vazao BLE durante captura real; perdas devem ser medidas na placa.
+Consulte `README_TESTE_FIFO_PPG.md` para protocolo de validacao.
+
 ## Serial USB e BLE
 
 O protocolo numerico de pressao continua ativo, 115200 baud por USB e

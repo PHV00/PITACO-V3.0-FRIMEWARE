@@ -53,6 +53,8 @@ const float ZERO_REFERENCE_PA = 100.0f; // Referencia provisoria para testar a U
 #define MAX30105_SCL 5
 #define PPG_WINDOW_MS 5000UL
 #define PPG_POLL_GAP_MS 180UL
+#define PPG_DIAG true  // Telemetria de bancada a cada 2s; desligar apos validacao
+#define PPG_DIAG_MS 2000UL
 #define BLE_JSON_CHUNK_BYTES 20  // Compativel com MTU minimo de 23
 
 // MPX5010DP nominal: Vout / Vs = 0.09 * P[kPa] + 0.04
@@ -75,6 +77,9 @@ uint16_t ppgSeq = 0;
 uint16_t g1Window = 0;
 unsigned long ppgWindowStartMs = 0;
 unsigned long ppgLastPollMs = 0;
+unsigned long ppgLastDiagMs = 0;
+uint32_t ppgDiagFound = 0;
+uint32_t ppgDiagProcessed = 0;
 unsigned long lastBeatMs = 0;
 float heartBpm = 0.0f;
 float latestPressurePa = 0.0f;
@@ -485,10 +490,14 @@ void InitMAX30105() {
   max30105.setPulseAmplitudeIR(0x1F);
   max30105.setPulseAmplitudeGreen(0);
   max30105.disableFIFORollover();
+  // STOPPED: a conversao nao deve continuar durante espera pelo comando r.
+  // Evita que a FIFO encha antes da primeira coleta (32 registros fisicos).
+  max30105.shutDown();
   max30105.clearFIFO();
   g1Reset();
   ppgReady = true;
   Serial.println("X,MAX30105_READY,RED_IR");
+  Serial.println("X,PPG_STATE,STOPPED");
 }
 
 // A caracteristica de pressao original continua transmitindo 20 Hz;
@@ -517,41 +526,76 @@ void SendG1Json(uint8_t reason, uint16_t samples) {
 
 void PollMAX30105() {
   if (!ppgReady) return;
-  const bool enabled = isSampling && isCalibrated && !isOtaUpdating;
+
+  // O PPG acompanha a sessao respiratoria; durante zero/OTA ele tambem para.
+  const bool enabled = isSampling && isCalibrated &&
+                       !isOtaUpdating && !zeroInProgress;
 
   if (!enabled) {
     if (ppgSampling) {
+      // STOPPED: suspende as conversoes. Nao descarta dados durante a coleta;
+      // uma janela parcial e intencionalmente encerrada ao comando de parada.
+      max30105.shutDown();
       ppgSampling = false;
-      max30105.clearFIFO();
       g1Reset();
       g1Ready = false;
       g1Passed = false;
+      g1Reason = 1;
       heartBpm = 0;
       lastBeatMs = 0;
+      Serial.println("X,PPG_STATE,STOPPED");
     }
     return;
   }
 
   const unsigned long now = millis();
   if (!ppgSampling) {
+    // COLLECTING: acorda o MAX30105 e limpa apenas dados da fase parada.
+    // Essa limpeza acontece UMA vez na transicao, nunca por janela do SQI.
+    max30105.wakeUp();
     max30105.clearFIFO();
     g1Reset();
     ppgSampling = true;
     ppgWindowStartMs = now;
     ppgLastPollMs = now;
+    ppgLastDiagMs = now;
+    ppgDiagFound = 0;
+    ppgDiagProcessed = 0;
     g1Ready = false;
     g1Passed = false;
     g1Reason = 1;
     heartBpm = 0;
     lastBeatMs = 0;
     ++g1Window;
+    Serial.println("X,PPG_STATE,COLLECTING");
   } else if ((unsigned long)(now - ppgLastPollMs) > PPG_POLL_GAP_MS) {
-    // Marcar a janela invalida apos pausa, ainda que o FIFO tenha amostras.
+    // Uma chamada atrasada invalida a janela, mesmo que a FIFO tenha dados.
     g1MarkAcquisitionGap();
   }
   ppgLastPollMs = now;
 
-  max30105.check();
+  // O MAX30105 possui FIFO fisica de 32 registros. Com rollover desabilitado,
+  // overflow pode deixar WR_PTR == RD_PTR e check() reportando zero.
+  // Antes de qualquer descarte, tentamos consumir as amostras legiveis.
+  const uint8_t ovf = max30105.readRegister8(0x57, 0x05);
+  if (ovf > 0) {
+    g1MarkAcquisitionGap();
+    Serial.printf("X,PPG_FIFO_OVERFLOW,ovf=%u\\n", (unsigned)ovf);
+  }
+
+  // A SparkFun ainda possui um buffer circular de apenas 4 posicoes.
+  const uint16_t novos = max30105.check();
+  const uint8_t disponiveis = max30105.available();
+  ppgDiagFound += novos;
+
+  if (novos > disponiveis) {
+    // O check() leu mais do que o anel interno conseguiu preservar.
+    // Registra perda explicitamente para evitar falsos PASS do Gate 01.
+    g1MarkAcquisitionGap();
+    Serial.printf("X,PPG_SW_RING_OVERRUN,novas=%u,disponiveis=%u\\n",
+                  (unsigned)novos, (unsigned)disponiveis);
+  }
+
   while (max30105.available()) {
     const uint32_t red = max30105.getFIFORed();
     const uint32_t ir = max30105.getFIFOIR();
@@ -605,7 +649,31 @@ void PollMAX30105() {
         (unsigned)g1Reason);
     if (written > 0 && written < (int)sizeof(line)) SendPpgJson(line);
     max30105.nextSample();
+    ++ppgDiagProcessed;
   }
+
+  if (ovf > 0) {
+    // Recuperacao de falha: amostras que ainda podiam ser lidas ja foram
+    // processadas acima. Reinicializar os ponteiros perde o resto da fila,
+    // mas o G1 ja registrou a perda desta janela.
+    max30105.clearFIFO();
+    Serial.println("X,PPG_FIFO_RECOVERED");
+  }
+
+#if PPG_DIAG
+  if ((unsigned long)(millis() - ppgLastDiagMs) >= PPG_DIAG_MS) {
+    ppgLastDiagMs = millis();
+    const uint8_t wr = max30105.getWritePointer();
+    const uint8_t rd = max30105.getReadPointer();
+    Serial.printf(
+      "X,PPG_DIAG,novas=%lu,processadas=%lu,wr=%u,rd=%u,ovf=%u\\n",
+      (unsigned long)ppgDiagFound, (unsigned long)ppgDiagProcessed,
+      (unsigned)wr, (unsigned)rd,
+      (unsigned)max30105.readRegister8(0x57, 0x05));
+    ppgDiagFound = 0;
+    ppgDiagProcessed = 0;
+  }
+#endif
 
   if ((unsigned long)(millis() - ppgWindowStartMs) >= PPG_WINDOW_MS) {
     uint16_t samples = 0;
