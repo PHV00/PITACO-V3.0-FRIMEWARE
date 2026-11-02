@@ -23,17 +23,20 @@ class AcquisitionLifecycleContract(unittest.TestCase):
         self.assertLess(f.index("max30105.setup("), f.index("max30105.shutDown();"))
         self.assertIn('Serial.println("X,PPG_STATE,STOPPED")', f)
 
-    def test_start_requires_calibration_and_wakes_first(self):
+    def test_start_requires_calibration_and_prepares_fifo_before_wakeup(self):
         f = body("PollMAX30105")
         for token in ("isSampling && isCalibrated",
                       "!isOtaUpdating && !zeroInProgress"):
             self.assertIn(token, f)
         start = f.index("if (!ppgSampling) {")
         start_body = f[start:f.index("} else if (", start)]
-        self.assertLess(start_body.index("max30105.wakeUp();"),
-                        start_body.index("max30105.clearFIFO();"))
         self.assertLess(start_body.index("max30105.clearFIFO();"),
+                        start_body.index("max30105.wakeUp();"))
+        self.assertLess(start_body.index("max30105.wakeUp();"),
                         start_body.index("ppgSampling = true;"))
+        self.assertIn("X,PPG_PRESTART", start_body)
+        self.assertIn("PRESTART_RESET_FAILED", start_body)
+        self.assertIn("WAKEUP_FAILED", start_body)
 
     def test_stop_suspends_conversions(self):
         f = body("PollMAX30105")
@@ -48,6 +51,15 @@ class AcquisitionLifecycleContract(unittest.TestCase):
         self.assertLess(f.index("while (max30105.available())"),
                         f.index('Serial.println("X,PPG_FIFO_RECOVERED")'))
         self.assertIn('X,PPG_SW_RING_OVERRUN', f)
+        reset = f[f.index("if (ovf > 0) {", f.index("while (max30105.available())")):]
+        self.assertLess(reset.index("max30105.shutDown();"),
+                        reset.index("max30105.clearFIFO();"))
+        self.assertLess(reset.index("max30105.clearFIFO();"),
+                        reset.index("max30105.wakeUp();"))
+        self.assertIn("X,PPG_FIFO_RESET_CHECK", reset)
+        self.assertIn("X,PPG_ERROR,FIFO_RESET_FAILED", reset)
+        self.assertLess(reset.index('Serial.println("X,PPG_FIFO_RECOVERED")'),
+                        reset.index("#if PPG_DIAG"))
 
     def test_g1_and_raw_values_are_preserved(self):
         f = body("PollMAX30105")

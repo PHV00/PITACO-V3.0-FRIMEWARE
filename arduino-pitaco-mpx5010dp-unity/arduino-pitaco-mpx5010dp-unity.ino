@@ -550,10 +550,31 @@ void PollMAX30105() {
 
   const unsigned long now = millis();
   if (!ppgSampling) {
-    // COLLECTING: acorda o MAX30105 e limpa apenas dados da fase parada.
-    // Essa limpeza acontece UMA vez na transicao, nunca por janela do SQI.
-    max30105.wakeUp();
+    // COLLECTING: preparar a FIFO ainda em shutdown. No teste de bancada,
+    // zerar ovf=31 enquanto parado funcionou; enquanto ativo nao funcionou.
     max30105.clearFIFO();
+    const uint8_t preOvf = max30105.readRegister8(0x57, 0x05);
+    const uint8_t preWr = max30105.getWritePointer();
+    const uint8_t preRd = max30105.getReadPointer();
+    Serial.printf("X,PPG_PRESTART,ovf=%u,wr=%u,rd=%u\n",
+                  (unsigned)preOvf, (unsigned)preWr, (unsigned)preRd);
+    if (preOvf != 0 || preWr != 0 || preRd != 0) {
+      // Falha de MAX30105 nao pode bloquear a pressao do PITACO.
+      max30105.shutDown();
+      ppgReady = false;
+      Serial.println("X,PPG_ERROR,PRESTART_RESET_FAILED");
+      return;
+    }
+
+    max30105.wakeUp();
+    const uint8_t modeAwake = max30105.readRegister8(0x57, 0x09);
+    Serial.printf("X,PPG_SENSOR_AWAKE,mode=%02X\n", (unsigned)modeAwake);
+    if ((modeAwake & 0x80U) != 0) {
+      max30105.shutDown();
+      ppgReady = false;
+      Serial.println("X,PPG_ERROR,WAKEUP_FAILED");
+      return;
+    }
     g1Reset();
     ppgSampling = true;
     ppgWindowStartMs = now;
@@ -653,10 +674,44 @@ void PollMAX30105() {
   }
 
   if (ovf > 0) {
-    // Recuperacao de falha: amostras que ainda podiam ser lidas ja foram
-    // processadas acima. Reinicializar os ponteiros perde o resto da fila,
-    // mas o G1 ja registrou a perda desta janela.
+    // Somente depois de tentar processar os registros acessiveis.
+    // Nao limpar continuamente: desligar conversoes, resetar FIFO e
+    // confirmar os registradores antes de voltar a adquirir.
+    max30105.shutDown();
     max30105.clearFIFO();
+    const uint8_t resetOvf = max30105.readRegister8(0x57, 0x05);
+    const uint8_t resetWr = max30105.getWritePointer();
+    const uint8_t resetRd = max30105.getReadPointer();
+    Serial.printf(
+      "X,PPG_FIFO_RESET_CHECK,antes=%u,depois=%u,wr=%u,rd=%u\n",
+      (unsigned)ovf, (unsigned)resetOvf,
+      (unsigned)resetWr, (unsigned)resetRd
+    );
+
+    // A perda invalida a janela atual e qualquer BPM anterior.
+    g1Ready = false;
+    g1Passed = false;
+    heartBpm = 0.0f;
+    lastBeatMs = 0;
+
+    if (resetOvf != 0 || resetWr != 0 || resetRd != 0) {
+      // Evita loop infinito de logs e preserva MPX5010DP + USB/BLE.
+      ppgReady = false;
+      ppgSampling = false;
+      Serial.println("X,PPG_ERROR,FIFO_RESET_FAILED");
+      return;
+    }
+
+    max30105.wakeUp();
+    const uint8_t modeRecovered = max30105.readRegister8(0x57, 0x09);
+    if ((modeRecovered & 0x80U) != 0) {
+      max30105.shutDown();
+      ppgReady = false;
+      ppgSampling = false;
+      Serial.println("X,PPG_ERROR,FIFO_WAKEUP_FAILED");
+      return;
+    }
+    ppgLastPollMs = millis();
     Serial.println("X,PPG_FIFO_RECOVERED");
   }
 

@@ -2,6 +2,13 @@
 
 ## Evidencia experimental (logs de bancada de 02/11/2026)
 
+Em teste posterior, a limpeza enquanto o sensor permanecia ativo retornou
+`antes=31,depois=31`, repetidamente. Um diagnostico com `shutDown()`
+retornou `modo=83,ackOvf=0,ovf=0,ackLed=0,ledAntes=1F,ledTeste=00`,
+confirmando que houve sucesso na escrita I2C e no zeramento da FIFO
+com o sensor parado. Isso motiva a mudanca da sequencia, ainda nao
+validada em aquisicao continua.
+
 No firmware anterior, coletor USB `pitaco24_ppg_probe.py` obteve somente
 pressao; G1 retornou `reason=1,samples=0` durante sete janelas.
 Leitura direta de registros mostrou repetidamente:
@@ -19,19 +26,30 @@ ainda comprovacao experimental da origem exclusiva do overflow.
 
 ```text
 BOOT -> MAX30105.setup -> shutDown -> STOPPED
-STOPPED -- r + calibrado + sem zero/OTA --> wakeUp -> clearFIFO -> COLLECTING
+STOPPED -- r + calibrado + sem zero/OTA --> clearFIFO -> verificar -> wakeUp -> COLLECTING
 COLLECTING -- f / e / zero / OTA --> shutDown -> STOPPED
 COLLECTING -- overflow --> G1 GAP -> consumir amostras acessiveis
-                              -> clearFIFO (recuperacao) -> COLLECTING
+                              -> shutDown -> clearFIFO -> verificar -> wakeUp -> COLLECTING
 ```
 
 - Sem amostras no estado parado: **nao se chama `check()` enquanto parado**.
 - `clearFIFO()` na transicao para COLLECTING remove dados antigos de
-  quando o sensor estava desligado; nao e descarte periodico.
+  quando o sensor estava desligado; e executado **antes de wakeUp()**.
+  O firmware verifica imediatamente OVF/WR/RD; se nao zerarem, desliga
+  apenas PPG e registra `X,PPG_ERROR,PRESTART_RESET_FAILED`.
+- O modo de operacao apos `wakeUp()` tambem e lido e registrado.
+  `X,PPG_PRESTART` e `X,PPG_SENSOR_AWAKE` facilitam o diagnostico.
 - Enquanto coletando, os pares sao encaminhados a `g1Add()`, detecao
   experimental de BPM e JSON USB/BLE antes de `nextSample()`.
-- Em overflow: perda ja aconteceu, portanto G1 marca `reason=9 (GAP)`.
-  A tentativa de consumir amostras ainda acessiveis precede a limpeza.
+- Em overflow: perda ja aconteceu, portanto G1 marca GAP e bloqueia
+  temporariamente BPM. A tentativa de consumir amostras ainda acessiveis
+  precede a recuperacao `shutDown -> clearFIFO -> readback -> wakeUp`.
+  Somente se OVF/WR/RD zerarem emitimos `X,PPG_FIFO_RECOVERED`.
+  Caso contrario, `X,PPG_ERROR,FIFO_RESET_FAILED` desliga apenas o PPG,
+  evitando um ciclo infinito de mensagens, mas preserva a pressao.
+  Sem nenhuma amostra na janela, G1 reportara `NO_SAMPLES` (reason 1),
+  mesmo que tenha sido marcado um GAP; diagnosticos de erro complementam
+  esse resultado.
 - A biblioteca SparkFun emprega buffer de software com 4 posicoes,
   distinto da FIFO fisica de 32 registros. Se a contagem de `check()`
   superar `available()`, o firmware registra `PPG_SW_RING_OVERRUN`
@@ -49,9 +67,12 @@ COLLECTING -- overflow --> G1 GAP -> consumir amostras acessiveis
    10 segundos **sem pressionar r**. Nao deve haver G1 nem amostras PPG.
 4. Com o circuito respiratorio em repouso, enviar `z` se for
    necessario calibrar pressao; aguardar `zero_done`. O PPG fica parado.
-5. Enviar `r`. Verificar `X,PPG_STATE,COLLECTING`,
-   `type:sample` com RED/IR e `X,PPG_DIAG` exibindo
-   `processadas>0`. Esperado ~25 pares/s, sujeito a carga real.
+5. Enviar `r`. Verificar `X,PPG_PRESTART,ovf=0,wr=0,rd=0`,
+   `X,PPG_SENSOR_AWAKE,mode=03` (bits relevantes), e depois
+   `X,PPG_STATE,COLLECTING`. Observar `type:sample` com RED/IR e
+   `X,PPG_DIAG` exibindo `processadas>0` (~25 pares/s esperados).
+   Se ocorrer `X,PPG_ERROR,*`, parar o ensaio e enviar o log completo;
+   nao forcar a recuperacao manual repetidamente.
 6. Em 5 segundos, verificar `type:g1`: para dedo estavel deve ser
    possivel obter `samples>0`; PASS nao e garantido antes de recalibrar
    thresholds para o MAX30105 real.
