@@ -1,24 +1,25 @@
-name: PITACO 2.4 MAX30105 host tests
+name: PITACO 2.4 minimal JSON USB BLE tests
 on:
   push:
-    branches: [feature/pitaco-24-max30105-g1]
+    branches: [feature/pitaco-24-simple-json-usb-ble-bpm]
   pull_request:
     paths:
-      - 'arduino-pitaco-mpx5010dp-unity/sqi_gate1.*'
-      - 'arduino-pitaco-mpx5010dp-unity/ppg_max30105.*'
-      - 'arduino-pitaco-mpx5010dp-unity/tests/**'
-      - 'arduino-pitaco-mpx5010dp-unity/pitaco24_ppg_probe.py'
+      - 'arduino-pitaco-mpx5010dp-unity/**'
+      - '.github/workflows/pitaco24-g1.yml'
 jobs:
   host:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: C++ G1
+      - name: G1 compilado a partir do mesmo INO do ESP32
         run: |
           cd arduino-pitaco-mpx5010dp-unity
-          g++ -std=c++11 -Wall -Wextra -Werror -I. sqi_gate1.cpp tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1
+          g++ -std=c++11 -Wall -Wextra -Werror tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1
           /tmp/pitaco_g1
-      - name: USB parser
+      - name: JSON protocol USB / BLE
         run: |
           cd arduino-pitaco-mpx5010dp-unity
           python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Sintaxe Python ponte original
+        run: |
+          python3 -m py_compile arduino-pitaco-mpx5010dp-unity/ble_client_mpx5010dp.py
