@@ -1,6 +1,7 @@
 #include "sqi_gate1.h"
 
-// Thresholds iniciais do SQI Flow V5; requerem recalibracao neste hardware.
+// Thresholds empiricos herdados de ensaios com MAX30102. Recalibrar para
+// MAX30105 no dedo e na montagem optica final.
 static const uint32_t ADC_MAX = 262143UL;
 static const uint32_t MIN_MEAN = 5000UL;
 static const uint32_t MIN_RANGE = 500UL;
