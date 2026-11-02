@@ -1,111 +1,143 @@
-# PITACO 2.4 — MAX30105 + Gate 01 (prototipo experimental)
+# PITACO 2.4 — MPX5010DP + MAX30105 + G1 + BPM experimental
 
-Sensor fisico informado: MAX30105. Firmware de origem: ramo
-fix/usb-bridge-grafico do PITACO MPX5010DP/ESP32. Biblioteca utilizada:
-SparkFun MAX3010x Pulse and Proximity Sensor Library (MAX30105.h).
+## Objetivo e arquitetura minima
 
-## Estrategia de aquisicao
-- MAX30105 possui canais RED, IR e GREEN; sensor de origem e de deteccao optica
-  de particulas. Aqui usamos PPG como pesquisa, NAO como dispositivo medico.
-- Modo de operacao padrao: LED_MODE=2 (RED + IR), 100 Hz de sample rate,
-  FIFO-average=4, pulse width 411 us (ate 18 bits) e adcRange=4096.
-- GREEN opcional: configurar PITACO24_ENABLE_GREEN=1 em ppg_max30105.h,
-  habilitando LED_MODE=3 e coleta RED + IR + GREEN.
-- G1 avalia SOMENTE RED/IR mesmo no modo com GREEN. GREEN serve para
-  caracterizacao do sinal e possiveis experimentos futuros.
-- Em ambos os modos o firmware continua usando a mesma biblioteca MAX30105.h.
+Esta branch simplifica a PR anterior. Apenas dois arquivos de firmware:
 
-## Fios e pinagem (HIPOTESES — verificar fisicamente)
+- arduino-pitaco-mpx5010dp-unity.ino
+  - Preserva a coleta de pressao MPX5010DP, calibração, USB, BLE e OTA.
+  - Configura MAX30105, coleta RED/IR e invoca SQI G1.
+  - Calcula BPM experimental com checkForBeat(IR) da biblioteca SparkFun.
+  - Envia JSON Lines tanto por USB quanto por Bluetooth BLE.
+- gate_01_integrity.ino
+  - Gate 01 com thresholds PROVISORIOS; nao modifica o PPG.
 
-MPX5010DP mantido no GPIO0 da versao experimental do PITACO.
-MAX30105 I2C: SDA=GPIO4, SCL=GPIO5, por enquanto.
-Confirmar quais pinos sao expostos e livres na placa ESP32 efetivamente usada.
-A alimentacao depende do breakout: conferir regulador e pull-ups; nao
-aplicar 5 V diretamente aos sinais I2C de um ESP32 3.3 V.
-Endereço I2C usual 0x57; a biblioteca verifica PART_ID=0x15, mas esse codigo
-de identificacao e compartilhado entre MAX30102 e MAX30105. O modelo real
-deve ser confirmado visualmente na placa/BOM.
+A ponte Python mantida ble_client_mpx5010dp.py entende o JSON e continua
+distribuindo pressao/fluxo ao controlador PITACO legado no Unity. Adiciona
+porta virtual opcional para o controlador Oximetro do Unity.
+pitaco24_protocol.py e somente um pequeno parser Python compartilhado.
 
-## Firmware e sua arquitetura
+## Biblioteca e GPIOs
 
-arquivos:
-- arduino-pitaco-mpx5010dp-unity.ino: pressao, comandos, USB/BLE/OTA, loop.
-- ppg_max30105.h / ppg_max30105.cpp: MAX30105, FIFO, 18-bit, RED/IR/GREEN opcional.
-- sqi_gate1.h / sqi_gate1.cpp: G1 streaming para RED e IR.
+Firmware Arduino Core ESP32 (placa ESP32-C3 conforme branch de origem).
+Adicionar a biblioteca SparkFun MAX3010x Pulse and Proximity Sensor Library
+(inclui MAX30105.h e heartRate.h).
 
-Status dos gates: apenas G1. Thresholds de G1 eram empiricos com MAX30102
-e exigem recalibracao para MAX30105, montagem real, posicao do dedo e pegador.
+MPX5010DP: GPIO0 existente.
+MAX30105: SDA GPIO4, SCL GPIO5, pinos PROVISORIOS.
+Antes de energizar, revisar pinagem real, VCC/VIN do breakout, pull-ups
+I2C e niveis logicos 3.3 V do ESP32. Nao presumir que todo breakout
+MAX30105 aceita 5 V.
 
-## Saida USB 115200 baud
+Setup MAX30105: 100 Hz configurados, FIFO-average=4 (~25 amostras/s
+efetivas), dois LEDs RED+IR, green desligado, largura 411 us (18 bits).
+O MAX30105 nao e um oximetro medico certificado; seu uso aqui e pesquisa.
 
-Mantem pressao numerica legada e o comando echop.
+## Serial USB e BLE
 
-Novas linhas:
-- Modo padrao: R,seq,receive_ms,window,red,ir
-- Modo GREEN:  R,seq,receive_ms,window,red,ir,green
-- Resultado G1: Q,window,end_ms,pass,reason,samples
-- Sucesso: X,PPG_READY,MAX30105,CHANNELS,RED_IR,G1_ONLY
-  ou X,PPG_READY,MAX30105,CHANNELS,RED_IR_GREEN,G1_ONLY
-- Falha I2C: X,PPG_ERROR,MAX30105_NOT_FOUND
-- Identificacao indicativa: X,PPG_IDENT,MAX30105_ASSUMED,PART_ID,0x15,REV,0xNN
+O protocolo numerico de pressao continua ativo, 115200 baud por USB e
+caracteristica BLE original para preservar os clientes atuais.
+Comandos herdados e/r/f/c/z, echo echop e OTA mantidos.
 
-receive_ms e momento da retirada do FIFO, nao da conversao ADC.
-A janela G1 dura 5 s. Motivos G1:
-0 OK; 1 NO_SAMPLES; 2 RED_LOW; 3 IR_LOW; 4 RED_FLAT;
-5 IR_FLAT; 6 RED_CLIP; 7 IR_CLIP; 8 TOO_FEW; 9 ACQUISITION_GAP.
+Tambem sao enviadas linhas JSON pela USB e pela characteristic PPG BLE:
+service UUID: 0f128d4d-3cf9-46de-bb31-ed159450d6cf
+pressao legado: 3bcdff27-47fc-4a87-9684-7672c49d9266
+JSON PPG notify: 3bcdff2a-47fc-4a87-9684-7672c49d9266
 
-## BLE
+Exemplo de amostra (valores ilustrativos):
+{"type":"sample","seq":15,"t_ms":10400,"ppg":{"red":109840,"ir":122963,"bpm":72.5,"bpm_valid":true},"mpx5010dp":{"pressure_pa":14.5,"valid":true},"sqi":{"g1":true,"reason":0}}
 
-Mantida characteristic de pressao: 3bcdff27-47fc-4a87-9684-7672c49d9266.
-Nova characteristic PPG NOTIFY: 3bcdff2a-47fc-4a87-9684-7672c49d9266.
-Servico: 0f128d4d-3cf9-46de-bb31-ed159450d6cf.
+O campo bpm passa a ser null e bpm_valid=false quando nao ha estimativa
+disponivel ou o G1 nao aprovou a janela mais recente.
+g1=null significa janela inicial ainda nao avaliada (5 s).
+A pressao e a amostra do PPG possuem frequencias de aquisicao diferentes:
+o campo pressure_pa e o ultimo valor de pressao conhecido, nao uma leitura
+simultanea ao instante da conversao de RED/IR. t_ms e o momento de leitura
+da FIFO, nao o timestamp de conversao do ADC.
 
-Pacotes binarios little-endian:
-- 0x01 (16B): A5 01 | seq:u16 | window:u16 | ms:u32 | red:u24 | ir:u24
-- 0x03 (19B): A5 03 | seq:u16 | window:u16 | ms:u32 | red:u24 | ir:u24 | green:u24
-- 0x02 (12B): A5 02 | window:u16 | ms:u32 | pass:u8 | reason:u8 | count:u16
+JSON G1 separado a cada ~5s:
+{"type":"g1","t_ms":15000,"window":3,"sqi":{"g1":true,"reason":0,"samples":125}}
 
-Pacote 0x03 aparece apenas quando modo GREEN esta habilitado e ainda cabe em
-20 bytes de carga ATT numa notificacao BLE com MTU padrao=23.
+BLE GATT: uma mensagem JSON inclui LF e pode ultrapassar o payload
+minimo de notificacao de 20 bytes (ATT MTU=23). O firmware transmite
+o JSON em pedacos de ate 20 bytes na mesma characteristic, ordenados,
+e a ponte Python concatena ate LF. Isso evita truncamento por MTU minimo,
+mas gera MULTIPLAS notificacoes por amostra. A confiabilidade de BLE
+a ~25 amostras/s junto com a caracteristica legada de pressao precisa
+ser demonstrada em bancada sob carga. Notificacoes BLE nao garantem entrega;
+monitorar sequencias perdidas e gaps de FIFO antes de afirmar equivalencia USB.
+O PC nao pode enviar e/r/f diretamente a characteristic JSON; comandos
+continuam na characteristic BLE original.
 
-## Validacao
+## BPM e SpO2
 
-1. Confirmar fisicamente o modelo MAX30105, seus pinos e tensoes.
-2. Compilar e gravar no ESP32 real com Arduino Core e SparkFun MAX3010x.
-3. Com USB conectado, enviar e e depois r, verificar pressao e RAW.
-4. Testar sem dedo / dedo estavel por pelo menos tres janelas de 5 s.
-5. Coletar CSV (modo RED+IR):
-   python3 -m pip install pyserial
-   python3 pitaco24_ppg_probe.py /dev/ttyACM0 --seconds 35
-   (trocar por COM3 no Windows).
-6. Alterar PITACO24_ENABLE_GREEN=1, recompilar, refazer o teste. Agora o CSV
-   deve incluir a coluna green; o Gate 01 deve permanecer RED/IR.
-7. Testar BLE, preservacao do canal de pressao e contagem de pacotes.
-8. Executar comando z/c e observar se o firmware continua adquirindo PPG
-   sem perdas significativas de FIFO.
-9. Revisar thresholds G1 usando capturas reais do MAX30105.
+O BPM do firmware deriva de checkForBeat(IR), presente na SparkFun. Depende
+de detectar pulsos plausiveis e de G1 PASS. E um VALOR EXPERIMENTAL,
+nao validado clinicamente para MAX30105. Nao confundir deteccao de pulso
+com estimativa clinica de frequencia cardiaca.
 
-Testes host:
-g++ -std=c++11 -Wall -Wextra -Werror -I. sqi_gate1.cpp tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1
+O algoritmo Maxim do I Blue It original (spo2_algorithm.h) e nossa
+principal referencia historica para uma futura comparacao de BPM/SpO2,
+mas sua funcao original de coleta bloqueante NAO foi copiada ao ESP32.
+O estimador de BPM do repositorio RFC permanece experimental e NAO e
+a base deste firmware.
+
+SpO2 NAO e calculada por este codigo. Para a interface serial original
+do Unity, a ponte opcional transmite "BPM,0" somente quando BPM e G1
+estao validos. O zero e sentinela de SpO2 indisponivel, e NAO uma medicao
+de oxigenacao. O Unity atual pode exibir "0%" por nao reconhecer status
+de indisponibilidade; isto requer um tratamento de UI antes de qualquer
+demonstracao de SpO2 ao paciente.
+
+## Ponte Python / Unity
+
+Executar ble_client_mpx5010dp.py no Windows com as dependencias originais.
+A interface agora oferece:
+- Porta ESP32 (USB), quando se usa cabo.
+- Porta Jogo (Virtual): canal respiratorio existente, com echop.
+- Porta Oxímetro (Virtual): canal OPCIONAL, com echox e FC,0.
+- Seletor original Bluetooth / Cabo USB.
+
+Os dois canais virtuais devem usar portas distintas e pares com0com
+configurados para cada controlador do Unity; nao selecionar a mesma COM
+fisica duas vezes. O ramo original do Unity pode permanecer sem mudancas
+para a pressao. O controlador Oximetro ja conhece FC,SpO2, mas sua
+ativacao no Unity e codigo de UI devem ser inspecionados antes do uso.
+
+O parser minimo e testavel em pitaco24_protocol.py; JSON de PPG e
+traduzido pelo bridge em vez de repassar diretamente para a Unity,
+que continua recebendo seu formato antigo.
+
+## Teste bancada
+
+1. Confirmar SDA/SCL, placa, alimentacao e biblioteca SparkFun.
+2. Compilar com Arduino IDE ou arduino-cli ESP32-C3.
+3. Usar cabo primeiro: observar echop, pressao numerica e JSON sample.
+4. Com o dedo estavel, medir taxa de amostras, g1 e bpm. Sem dedo e com
+   movimento, verificar que bpm_valid fica falso quando necessario.
+5. Testar calibracoes c e z; observar gaps, travamentos e continuidade
+   da pressao.
+6. Testar Bluetooth e comparar seq e desempenho com USB. Se houver gaps,
+   revisar transporte antes de utilizar G2/G3/G4 e BPM no jogo.
+7. Conectar duas COM virtuais (pressao e oxímetro), confirmar echop / echox
+   e que a Unity recebe pressão e o BPM apenas no respectivo controlador.
+
+Teste host na pasta do firmware:
+g++ -std=c++11 -Wall -Wextra -Werror tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1
 python3 -m unittest discover -s tests -p 'test_*.py'
 
-## Limitacoes
-- O MAX30105 nao tem validacao clinica de SpO2 neste projeto.
-- G1 PASS nao e autorizacao para usar SpO2 clinica ou para acionar protecao.
-- Os parametros do G1 foram pesquisados/observados no MAX30102, NAO
-  recalibrados ainda para o sensor MAX30105 real.
-- A biblioteca SparkFun usa buffer interno pequeno. Serial, BLE e calibracao
-  da pressao devem ser testados juntos para identificar atrasos/perdas.
-- Ainda sem compilacao verificada de todo firmware no ESP32, sem bancada,
-  sem calculo de FC/SpO2 no PC e sem integracao no Unity.
-- A ponte Python atual precisa reconhecer linhas de telemetria PPG R e Q.
+## Pendencias
 
-## Fontes
-MAX30105 datasheet:
-https://www.analog.com/media/en/technical-documentation/data-sheets/MAX30105.pdf
-SparkFun MAX3010x:
-https://github.com/sparkfun/SparkFun_MAX3010x_Sensor_Library
-Hookup:
-https://learn.sparkfun.com/tutorials/max30105-particle-and-pulse-ox-sensor-hookup-guide
-Historico G1:
-https://github.com/PHV00/RFC-MelhoriaProjetoIBlueIt
+- Compilacao e gravacao no ESP32 real e testes de sensor/USB/BLE.
+- Calibracao dos thresholds G1 para MAX30105 real.
+- Verificacao da acuracia BPM contra referencia confiavel.
+- Validacao quantitativa do calculo de fluxo do MPX5010DP.
+- Processamento G2/G3/G4, SpO2 calibrada e treinamento ML-Agents.
+- Tratar a ausencia de SpO2 na UI do Unity sem exibir 0% como se fosse
+  medida real.
+
+Fontes:
+- MAX30105/SparkFun: https://github.com/sparkfun/SparkFun_MAX3010x_Sensor_Library
+- Firmware original I Blue It:
+  https://github.com/UDESC-LARVA/iblueit-psychophysiological-flow
+- Firmware base PITACO: branch fix/usb-bridge-grafico
