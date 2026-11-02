@@ -4,6 +4,7 @@
 #include <BLE2902.h>
 #include <Update.h>
 #include <math.h>
+#include "ppg_max30102.h"  // PITACO 2.4: MAX30102 + SQI Gate 01
 
 // PITACO 2.0 - teste de integracao MPX5010DP + ESP32-C3
 // Valores negativos representam variacao sob a referencia, NAO pressao
@@ -36,6 +37,7 @@ const float ZERO_REFERENCE_PA = 100.0f; // Referencia provisoria para testar a U
 #define CHARACTERISTIC_UUID "3bcdff27-47fc-4a87-9684-7672c49d9266"
 #define OTA_CONTROL_UUID "3bcdff28-47fc-4a87-9684-7672c49d9266"
 #define OTA_DATA_UUID "3bcdff29-47fc-4a87-9684-7672c49d9266"
+#define PPG_NOTIFY_UUID "3bcdff2a-47fc-4a87-9684-7672c49d9266"
 
 // MPX5010DP nominal: Vout / Vs = 0.09 * P[kPa] + 0.04
 const float RAZAO_DIV_TENSAO = (R1 + R2) / R2;
@@ -46,6 +48,7 @@ unsigned long lastNotifyTime = 0;
 const unsigned long notifyInterval = 50;
 
 BLECharacteristic* pCharacteristic;
+BLECharacteristic* pPpgCharacteristic = nullptr;
 bool deviceConnected = false;
 bool isCalibrated = false;
 bool isSampling = false;
@@ -203,11 +206,20 @@ void setup() {
     BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
   pOtaDataChar->setCallbacks(new OtaDataCallbacks());
 
+  // Independente da caracteristica de pressao ja utilizada pelo PITACO.
+  pPpgCharacteristic = pService->createCharacteristic(
+    PPG_NOTIFY_UUID,
+    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  pPpgCharacteristic->addDescriptor(new BLE2902());
+
   pService->start();
 
   BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->start();
+
+  // Falha do sensor PPG nao pode desabilitar a pressao.
+  ppgBegin(pPpgCharacteristic);
 
 #if DEBUG
   Serial.println("BLE service started, waiting for client...");
@@ -227,6 +239,10 @@ void loop() {
 #if DEBUG
   isSampling = true;
 #endif
+
+  // Coleta nao bloqueante; so inicia PPG apos calibracao inicial de pressao.
+  // Continua lendo PPG durante o zero de 10 s.
+  ppgPoll(isSampling && isCalibrated && !isOtaUpdating, deviceConnected);
 
   // Nao emitir leituras enquanto calcula o zero; usar Pa sem filtros.
   if (zeroInProgress) {
