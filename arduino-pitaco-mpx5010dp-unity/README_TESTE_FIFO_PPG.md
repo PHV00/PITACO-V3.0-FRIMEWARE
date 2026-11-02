@@ -22,6 +22,50 @@ distinguir FIFO cheia de FIFO vazia apenas pelos ponteiros. O sistema
 respondia a I2C, os LEDs e o modo RED/IR estavam configurados. Nao ha
 ainda comprovacao experimental da origem exclusiva do overflow.
 
+## Validacao USB com MAX30105 real — 02/11/2026 (confirmada)
+
+Apos o commit `4ea1951`, ensaio de bancada com ESP32-C3 e
+`python .\\pitaco24_ppg_probe.py COM3 --seconds 35`:
+
+```text
+X,PPG_PRESTART,ovf=0,wr=0,rd=0
+X,PPG_SENSOR_AWAKE,mode=03
+X,PPG_STATE,COLLECTING
+X,PPG_DIAG,novas=50,processadas=50,wr=18,rd=18,ovf=0
+G1 1 {'g1': True, 'reason': 0, 'samples': 125}
+G1 2 {'g1': True, 'reason': 0, 'samples': 124}
+G1 3 {'g1': True, 'reason': 0, 'samples': 125}
+G1 4 {'g1': True, 'reason': 0, 'samples': 125}
+G1 5 {'g1': True, 'reason': 0, 'samples': 125}
+G1 6 {'g1': False, 'reason': 2, 'samples': 125}
+Amostras PPG 874 janelas G1 6 saltos de sequencia 0
+```
+
+Resultados observados:
+- **Aquisicao RED/IR restabelecida**: 874 pares em 35 s
+  (media ~24,97 pares/s), proxima dos 25 Hz esperados.
+- **FIFO acompanhada**: diagnosticos em ~2 s mostraram normalmente
+  `novas=50,processadas=50,ovf=0`; um ciclo registrou 49/49.
+  O instante `wr=16,rd=15,ovf=0` indica um registro pendente,
+  nao overflow. Nao houve evento de overflow no log fornecido.
+- **Integridade de transporte USB**: zero saltos de sequencia
+  na janela de 35 s. Isto nao valida throughput sob BLE/Unity.
+- **G1 em 5 s**: cinco janelas PASS (reason 0) e uma RED_LOW
+  (reason 2); todas receberam 124 ou 125 amostras.
+  RED_LOW indica media RED abaixo do limiar provisiorio de 5000,
+  sem evidencia suficiente para atribuir causa optica especifica.
+- **Limites da conclusao**: ausencia de valores individuais RED/IR/BPM
+  no log de status compartilhado impede verificar amplitude real do
+  pulso, acuracia de BPM ou comportamento sem dedo/movimento.
+  A correcao do ciclo STOPPED->COLLECTING esta validada para este
+  ensaio curto em USB, nao ainda para uso continuo, OTA ou BLE.
+
+Proximos ensaios: analisar o CSV com RED, IR, BPM, `bpm_valid`, timestamps
+e SQI; repetir com dedo firme, dedo removido e movimento controlado.
+Depois testar `f`/`r` em sequencia, ciclo `z`, sessao prolongada
+(2-5 min) e BLE ativo, verificando overflow e sequencias. Nao alterar
+os thresholds G1 sem observar distribuicao de RED/IR e evidencias.
+
 ## Politica nova
 
 ```text
@@ -99,8 +143,10 @@ COLLECTING -- overflow --> G1 GAP -> consumir amostras acessiveis
   disponivel e BLE/OTA continuam compativeis.
 - Havendo perda/overflow, o G1 nao apresenta falso PASS.
 
-**Estado de verificacao:** implementacao pronta para ensaio; o hardware
-fisico e a compatibilidade BLE/Unity ainda precisam ser comprovados.
+**Estado de verificacao:** aquisicao RED/IR via USB confirmada em
+bancada por 35 segundos (874 pares, zero overflow/seq gaps observados,
+5/6 janelas G1 PASS); testes prolongados, BLE/Unity, qualidade de PPG
+sob movimento e acuracia BPM permanecem pendentes.
 BPM e SpO2 nao sao clinicamente validados; SpO2 segue indisponivel.
 
 Referencia de software: https://github.com/sparkfun/SparkFun_MAX3010x_Sensor_Library
