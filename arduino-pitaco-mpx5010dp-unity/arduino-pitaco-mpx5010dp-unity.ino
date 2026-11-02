@@ -4,7 +4,16 @@
 #include <BLE2902.h>
 #include <Update.h>
 #include <math.h>
-#include "ppg_max30105.h"  // PITACO 2.4: MAX30105 + SQI Gate 01
+#include <Wire.h>
+#include <MAX30105.h>
+#include "heartRate.h"  // SparkFun: checkForBeat(IR)
+#include <stdint.h>
+
+// Gate 01 fica na segunda aba .ino; firmware respiratorio permanece central.
+void g1Reset();
+void g1Add(uint32_t red, uint32_t ir);
+void g1MarkAcquisitionGap();
+bool g1Evaluate(uint8_t* reason, uint16_t* samples);
 
 // PITACO 2.0 - teste de integracao MPX5010DP + ESP32-C3
 // Valores negativos representam variacao sob a referencia, NAO pressao
@@ -39,6 +48,13 @@ const float ZERO_REFERENCE_PA = 100.0f; // Referencia provisoria para testar a U
 #define OTA_DATA_UUID "3bcdff29-47fc-4a87-9684-7672c49d9266"
 #define PPG_NOTIFY_UUID "3bcdff2a-47fc-4a87-9684-7672c49d9266"
 
+// MAX30105: I2C ESP32-C3 PROVISORIO, conferir pinos fisicos.
+#define MAX30105_SDA 4
+#define MAX30105_SCL 5
+#define PPG_WINDOW_MS 5000UL
+#define PPG_POLL_GAP_MS 180UL
+#define BLE_JSON_CHUNK_BYTES 20  // Compativel com MTU minimo de 23
+
 // MPX5010DP nominal: Vout / Vs = 0.09 * P[kPa] + 0.04
 const float RAZAO_DIV_TENSAO = (R1 + R2) / R2;
 const float deadbandThreshold = 15.0f; // Experimental, ajustavel apos teste
@@ -49,6 +65,20 @@ const unsigned long notifyInterval = 50;
 
 BLECharacteristic* pCharacteristic;
 BLECharacteristic* pPpgCharacteristic = nullptr;
+MAX30105 max30105;
+bool ppgReady = false;
+bool ppgSampling = false;
+bool g1Ready = false;
+bool g1Passed = false;
+uint8_t g1Reason = 1;
+uint16_t ppgSeq = 0;
+uint16_t g1Window = 0;
+unsigned long ppgWindowStartMs = 0;
+unsigned long ppgLastPollMs = 0;
+unsigned long lastBeatMs = 0;
+float heartBpm = 0.0f;
+float latestPressurePa = 0.0f;
+bool pressureValid = false;
 bool deviceConnected = false;
 bool isCalibrated = false;
 bool isSampling = false;
@@ -83,6 +113,10 @@ void ResetPressureFilter();
 void SendStatus(const char* line);
 void StartTenSecondZero();
 void PollTenSecondZero();
+void InitMAX30105();
+void PollMAX30105();
+void SendPpgJson(const char* jsonLine);
+void SendG1Json(uint8_t reason, uint16_t samples);
 
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
@@ -218,8 +252,8 @@ void setup() {
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->start();
 
-  // Falha do sensor PPG nao pode desabilitar a pressao.
-  ppgBegin(pPpgCharacteristic);
+  // Falha de MAX30105 nao interrompe o MPX5010DP.
+  InitMAX30105();
 
 #if DEBUG
   Serial.println("BLE service started, waiting for client...");
@@ -240,9 +274,8 @@ void loop() {
   isSampling = true;
 #endif
 
-  // Coleta nao bloqueante; so inicia PPG apos calibracao inicial de pressao.
-  // Continua lendo PPG durante o zero de 10 s.
-  ppgPoll(isSampling && isCalibrated && !isOtaUpdating, deviceConnected);
+  // Atende FIFO regularmente, inclusive durante o zero de 10 segundos.
+  PollMAX30105();
 
   // Nao emitir leituras enquanto calcula o zero; usar Pa sem filtros.
   if (zeroInProgress) {
@@ -267,7 +300,9 @@ void loop() {
         if (abs(calibratedPa) < deadbandThreshold) {
             calibratedPa = 0.0;
         }
-        // formata e envia a leitura para buf
+        latestPressurePa = calibratedPa;
+        pressureValid = true;
+        // Formato numerico original mantido para clientes legados.
         char buf[32];
         snprintf(buf, sizeof(buf), "%.2f\n", calibratedPa);
 
@@ -431,4 +466,149 @@ float voutToPa() {
   const float pressaoKPa = (sensorVoltage / MPX_SUPPLY_V - 0.04f) / 0.09f;
   // A faixa negativa calculada nao e medida diferencial negativa validada.
   return pressaoKPa * 1000.0f;
+}
+
+
+// ---------------------------------------------------------------------------
+// PITACO 2.4: MAX30105 RED/IR + frequencia cardiaca experimental.
+// Um unico orquestrador .ino; G1 em gate_01_integrity.ino.
+// ---------------------------------------------------------------------------
+void InitMAX30105() {
+  Wire.begin(MAX30105_SDA, MAX30105_SCL);
+  if (!max30105.begin(Wire, I2C_SPEED_STANDARD)) {
+    Serial.println("X,MAX30105_NOT_FOUND");
+    return;
+  }
+  // RED+IR, 100 Hz com FIFO avg 4 (~25 amostras/s), largura 411us (18bits).
+  max30105.setup(0x1F, 4, 2, 100, 411, 4096);
+  max30105.setPulseAmplitudeRed(0x1F);
+  max30105.setPulseAmplitudeIR(0x1F);
+  max30105.setPulseAmplitudeGreen(0);
+  max30105.disableFIFORollover();
+  max30105.clearFIFO();
+  g1Reset();
+  ppgReady = true;
+  Serial.println("X,MAX30105_READY,RED_IR");
+}
+
+// A caracteristica de pressao original continua transmitindo 20 Hz;
+// o canal PPG transporta JSONL. Fracionar em 20B para MTU GATT minimo.
+// Receptor junta bytes ate o LF. Validar throughput real antes de producao.
+void SendPpgJson(const char* jsonLine) {
+  Serial.print(jsonLine);
+  if (!deviceConnected || !pPpgCharacteristic) return;
+  const size_t n = strlen(jsonLine);
+  for (size_t off = 0; off < n; off += BLE_JSON_CHUNK_BYTES) {
+    const size_t len = (n - off > BLE_JSON_CHUNK_BYTES)
+                         ? BLE_JSON_CHUNK_BYTES : n - off;
+    pPpgCharacteristic->setValue((uint8_t*)(jsonLine + off), len);
+    pPpgCharacteristic->notify();
+  }
+}
+
+void SendG1Json(uint8_t reason, uint16_t samples) {
+  char line[160];
+  snprintf(line, sizeof(line),
+           "{\"type\":\"g1\",\"t_ms\":%lu,\"window\":%u,\"sqi\":{\"g1\":%s,\"reason\":%u,\"samples\":%u}}\n",
+           millis(), (unsigned)g1Window, reason == 0 ? "true" : "false",
+           (unsigned)reason, (unsigned)samples);
+  SendPpgJson(line);
+}
+
+void PollMAX30105() {
+  if (!ppgReady) return;
+  const bool enabled = isSampling && isCalibrated && !isOtaUpdating;
+
+  if (!enabled) {
+    if (ppgSampling) {
+      ppgSampling = false;
+      max30105.clearFIFO();
+      g1Reset();
+      g1Ready = false;
+      g1Passed = false;
+      heartBpm = 0;
+      lastBeatMs = 0;
+    }
+    return;
+  }
+
+  const unsigned long now = millis();
+  if (!ppgSampling) {
+    max30105.clearFIFO();
+    g1Reset();
+    ppgSampling = true;
+    ppgWindowStartMs = now;
+    ppgLastPollMs = now;
+    g1Ready = false;
+    g1Passed = false;
+    g1Reason = 1;
+    heartBpm = 0;
+    lastBeatMs = 0;
+    ++g1Window;
+  } else if ((unsigned long)(now - ppgLastPollMs) > PPG_POLL_GAP_MS) {
+    // Marcar a janela invalida apos pausa, ainda que o FIFO tenha amostras.
+    g1MarkAcquisitionGap();
+  }
+  ppgLastPollMs = now;
+
+  max30105.check();
+  while (max30105.available()) {
+    const uint32_t red = max30105.getFIFORed();
+    const uint32_t ir = max30105.getFIFOIR();
+    const unsigned long receiveMs = millis(); // leitura FIFO, nao timestamp ADC
+    ++ppgSeq;
+    g1Add(red, ir);
+
+    // checkForBeat(IR) da SparkFun: BPM e estimativa experimental.
+    // Nunca fornecer BPM como valido antes de G1 PASS.
+    if (ir > 5000 && checkForBeat(ir)) {
+      if (lastBeatMs > 0) {
+        const unsigned long delta = receiveMs - lastBeatMs;
+        if (delta >= 300 && delta <= 1714) {  // 35 a 200 BPM
+          const float candidate = 60000.0f / (float)delta;
+          heartBpm = heartBpm > 0 ? (0.7f * heartBpm + 0.3f * candidate)
+                                 : candidate;
+        } else {
+          heartBpm = 0.0f;
+        }
+      }
+      lastBeatMs = receiveMs;
+    }
+
+    const bool bpmValid = g1Ready && g1Passed && heartBpm > 0
+                       && lastBeatMs > 0
+                       && (unsigned long)(receiveMs - lastBeatMs) <= 2000UL;
+    char bpm[16];
+    if (bpmValid) snprintf(bpm, sizeof(bpm), "%.1f", heartBpm);
+    else strcpy(bpm, "null");
+
+    // JSON por linha: mesmo esquema USB / BLE, sem dependencias de ArduinoJson.
+    // Pressao amostrada a 20Hz; RED/IR, cerca de 25Hz efetivos.
+    // G1 usa o ultimo resultado de uma janela de 5 segundos.
+    char line[240];
+    const int written = snprintf(line, sizeof(line),
+        "{\"type\":\"sample\",\"seq\":%u,\"t_ms\":%lu,"
+        "\"ppg\":{\"red\":%lu,\"ir\":%lu,\"bpm\":%s,\"bpm_valid\":%s},"
+        "\"mpx5010dp\":{\"pressure_pa\":%.2f,\"valid\":%s},"
+        "\"sqi\":{\"g1\":%s,\"reason\":%u}}\n",
+        (unsigned)ppgSeq, receiveMs, (unsigned long)red,
+        (unsigned long)ir, bpm, bpmValid ? "true" : "false",
+        latestPressurePa, pressureValid ? "true" : "false",
+        g1Ready ? (g1Passed ? "true" : "false") : "null",
+        (unsigned)g1Reason);
+    if (written > 0 && written < (int)sizeof(line)) SendPpgJson(line);
+    max30105.nextSample();
+  }
+
+  if ((unsigned long)(millis() - ppgWindowStartMs) >= PPG_WINDOW_MS) {
+    uint16_t samples = 0;
+    uint8_t reason = 1;
+    g1Passed = g1Evaluate(&reason, &samples);
+    g1Reason = reason;
+    g1Ready = true;
+    SendG1Json(reason, samples);
+    g1Reset();
+    ppgWindowStartMs = millis();
+    ++g1Window;
+  }
 }
