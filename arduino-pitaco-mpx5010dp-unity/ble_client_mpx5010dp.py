@@ -1848,8 +1848,11 @@ def process_pitaco_line(line_str, allow_pressure=True):
             and time.monotonic() - last_oxi_sent >= 1.0):
         # Contrato de jogo original: "FC,SpO2". Zero = SpO2 INDISPONIVEL,
         # nao uma estimativa calculada. Em UI atual pode aparecer como 0%.
-        ser_oxi.write(f"{round(bpm)},0\r\n".encode("ascii"))
-        last_oxi_sent = time.monotonic()
+        try:
+            ser_oxi.write(f"{round(bpm)},0\r\n".encode("ascii"))
+            last_oxi_sent = time.monotonic()
+        except serial.SerialException as exc:
+            log(f"Falha no envio de BPM para Unity: {exc}")
     return True
 
 
@@ -2097,7 +2100,7 @@ def start_bridge():
 
     oxi_port = oxi_port_var.get()
     if oxi_port and oxi_port != "Somente monitor":
-        if oxi_port == game_port or oxi_port == device_port_var.get():
+        if oxi_port == port_var.get() or oxi_port == device_port_var.get():
             log("Oxímetro: porta conflita com a porta de pressão ou do dispositivo.")
         else:
             try:

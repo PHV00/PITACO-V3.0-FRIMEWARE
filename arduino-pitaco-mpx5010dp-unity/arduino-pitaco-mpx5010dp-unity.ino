@@ -577,7 +577,12 @@ void PollMAX30105() {
       lastBeatMs = receiveMs;
     }
 
-    const bool bpmValid = g1Ready && g1Passed && heartBpm > 0
+    // Tambem bloquear envio imediato se esta amostra perder o contato
+    // optico, sem esperar o fim da proxima janela G1.
+    const bool opticalPresent = red >= 5000 && ir >= 5000
+                               && red < (262143UL - 2048UL)
+                               && ir < (262143UL - 2048UL);
+    const bool bpmValid = g1Ready && g1Passed && opticalPresent && heartBpm > 0
                        && lastBeatMs > 0
                        && (unsigned long)(receiveMs - lastBeatMs) <= 2000UL;
     char bpm[16];
