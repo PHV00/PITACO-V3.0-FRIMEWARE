@@ -66,3 +66,7 @@ O RAW RED/IR é transmitido mesmo quando G1 reprova, contanto que seja adquirido
 - **Não mudar** UUIDs nem forma das mensagens sem migrar a ponte e a Unity.
 
 Ver também ../README_BLE_TESTE.md (histórico e roteiro BLE) e ../README_TESTE_FIFO_PPG.md (ensaios da FIFO). Verificação host: python -m unittest discover -s tests -p test_*.py. A exatidão de BPM, SpO2 e equivalência BLE/USB ainda requer validação física.
+
+## Middleware gráfico PPG (branch experimental isolada)
+
+O programa ble_client_mpx5010dp.py já remonta PPG JSONL por BLE e USB, encaminha pressão para Unity e envia BPM válido pela COM virtual do oxímetro. Nesta branch de monitoramento, ele também apresenta RED/IR RAW no gráfico, contato, Gate 01 e contadores de seq e grava CSV opcional. **Não muda UUID, firmware ou transporte BLE**. Consultar [PPG_GUI_MONITOR.md](PPG_GUI_MONITOR.md) para arquitetura, funções e procedimento de comparação USB/BLE.
