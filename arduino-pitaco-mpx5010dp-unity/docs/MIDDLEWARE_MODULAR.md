@@ -62,3 +62,13 @@ Verificar no Windows as duas janelas simultâneas, aferições, abertura e
 fechamento sem interromper a outra, conexão BLE/USB, CSV e Unity.
 Os testes automatizados checam sintaxe/contratos; não substituem o teste
 físico nem a GUI real.
+
+## Oxímetro integrado ao ESP32 — sem segunda COM
+
+A seleção de porta virtual de oxímetro, seu estado, comandos `echox` e
+thread de escrita `FC,0` foram removidos de `main_window.py`.
+O MAX30102 está conectado diretamente ao ESP32 e envia RED, IR, BPM e SQI
+no JSON PPG recebido pelo USB ou BLE existentes. Não houve alteração no
+firmware, parser, qualidade do sinal ou cálculo de BPM/SpO₂. A porta virtual
+do **jogo respiratório** permanece para pressão/fluxo e comandos do PITACO;
+ela não passa automaticamente a transportar BPM/SpO₂ para a Unity.

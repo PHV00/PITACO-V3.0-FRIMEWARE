@@ -129,7 +129,6 @@ def save_config():
         "scale_multiplier": pneumo.flow_multiplier,
         "scale_key": scale_opt_var.get() if 'scale_opt_var' in globals() else config_data.get("scale_key"),
         "game_port": port_var.get() if 'port_var' in globals() else config_data.get("game_port"),
-        "oximeter_game_port": oxi_port_var.get() if 'oxi_port_var' in globals() else config_data.get("oximeter_game_port", "Somente monitor"),
         "output_mode": output_mode_var.get() if 'output_mode_var' in globals() else config_data.get("output_mode", "Pressão relativa (Pa)"),
         "device_port": device_port_var.get() if 'device_port_var' in globals() else config_data.get("device_port")
     }
@@ -274,10 +273,7 @@ running = False
 is_sampling = False
 client = None
 ser = None
-ser_oxi = None
 ser_device = None
-oxi_sampling = False
-last_oxi_sent = 0.0
 ble_ppg_lines = BleJsonlBuffer()
 ppg_monitor = PpgMonitor(max_points=300)
 ble_loop = None
@@ -453,11 +449,8 @@ def refresh_ports():
         ports = get_all_com_ports()
         port_combo.configure(values=["Somente monitor"] + ports)
         device_port_combo.configure(values=ports)
-        oxi_port_combo.configure(values=["Somente monitor"] + ports)
         saved_game = config_data.get("game_port", "Somente monitor")
         saved_dev = config_data.get("device_port", "")
-        saved_oxi = config_data.get("oximeter_game_port", "Somente monitor")
-        oxi_port_var.set(saved_oxi if saved_oxi in ports else "Somente monitor")
         # Nunca abrir a COM fisica tambem como COM virtual do jogo.
         port_var.set(saved_game if saved_game in ports else "Somente monitor")
         if ports:
@@ -481,17 +474,6 @@ port_combo = ctk.CTkComboBox(
     command=lambda e: save_config()
 )
 port_combo.pack(side="right")
-
-# Segunda porta virtual, opcional: Unity SerialControllerOximetro (echox).
-oxi_frame = ctk.CTkFrame(root, fg_color="transparent")
-oxi_frame.pack(pady=(2, 5), padx=15, fill="x")
-ctk.CTkLabel(oxi_frame, text="Porta Oxímetro (Virtual):", anchor="w").pack(side="left")
-oxi_port_var = ctk.StringVar(value=config_data.get("oximeter_game_port", "Somente monitor"))
-oxi_port_combo = ctk.CTkComboBox(
-    oxi_frame, variable=oxi_port_var, values=["Somente monitor"], width=125,
-    command=lambda _choice: save_config()
-)
-oxi_port_combo.pack(side="right")
 
 # Exibe a porta física se o modo salvo for Cabo USB
 if conn_mode_var.get() == "Cabo USB":
@@ -1059,7 +1041,6 @@ def update_pressure_from_device(val_pa):
 
 def process_pitaco_line(line_str, allow_pressure=True, source="USB"):
     """Aceita pressao original/JSON 2.4 e registra PPG para o monitor."""
-    global last_oxi_sent
     msg = parse_pitaco_line(line_str)
     if msg is None:
         return False
@@ -1080,26 +1061,9 @@ def process_pitaco_line(line_str, allow_pressure=True, source="USB"):
         if isinstance(pa, (float, int)) and not isinstance(pa, bool) and math.isfinite(pa):
             update_pressure_from_device(float(pa))
 
-    ppg = msg.get("ppg")
-    sqi = msg.get("sqi")
-    if not isinstance(ppg, dict) or not isinstance(sqi, dict):
-        return True
-    bpm = ppg.get("bpm")
-    # Gate 01 PASS, BPM valido e porta virtual do oxímetro habilitada.
-    if (ppg.get("bpm_valid") is True and sqi.get("g1") is True
-            and isinstance(bpm, (int, float)) and not isinstance(bpm, bool)
-            and math.isfinite(bpm) and 35 <= bpm <= 200
-            and oxi_sampling and ser_oxi and ser_oxi.is_open
-            and time.monotonic() - last_oxi_sent >= 1.0):
-        # Contrato de jogo original: "FC,SpO2". Zero = SpO2 INDISPONIVEL,
-        # nao uma estimativa calculada. Em UI atual pode aparecer como 0%.
-        try:
-            ser_oxi.write(f"{round(bpm)},0\r\n".encode("ascii"))
-            last_oxi_sent = time.monotonic()
-        except serial.SerialException as exc:
-            log(f"Falha no envio de BPM para Unity: {exc}")
+    # PPG/BPM/G1 ja foram observados pelo monitor a partir deste mesmo JSON.
+    # O canal de saida de oxímetro via COM virtual foi removido.
     return True
-
 
 def ppg_notification_handler(sender, data):
     # Uma notificacao pode ter apenas fragmentos do mesmo JSON; mede frames
@@ -1112,34 +1076,6 @@ def ppg_notification_handler(sender, data):
         except Exception as exc:
             ppg_monitor.note_invalid_json()
             log(f"Erro ao interpretar JSON PPG BLE: {exc}")
-
-
-def oximeter_command_loop():
-    """Responde echox aos comandos da COM virtual sem mexer no PITACO legado."""
-    global oxi_sampling, running
-    while running:
-        try:
-            if not ser_oxi or not ser_oxi.is_open:
-                break
-            data = ser_oxi.read(ser_oxi.in_waiting or 1)
-            for cmd in data.lower():
-                if cmd == ord("e"):
-                    ser_oxi.write(b"echox\r\n")
-                elif cmd == ord("r"):
-                    oxi_sampling = True
-                    # O jogo de oximetria pode iniciar sozinho a aquisicao.
-                    if ser_device and ser_device.is_open:
-                        ser_device.write(b"r")
-                    elif client and client.is_connected and ble_loop:
-                        asyncio.run_coroutine_threadsafe(
-                            client.write_gatt_char(CHARACTERISTIC_UUID, b"r", response=True),
-                            ble_loop)
-                elif cmd == ord("f"):
-                    oxi_sampling = False
-        except Exception as exc:
-            if running:
-                log(f"Erro no canal virtual do oxímetro: {exc}")
-            break
 
 
 def notification_handler(sender, data):
@@ -1322,7 +1258,7 @@ async def ble_bridge():
         root.after(0, lambda: ppg_graph_btn.configure(state="disabled"))
 
 def start_bridge():
-    global running, ser, ser_oxi, ser_device, ble_loop, ble_loop_thread, is_sampling, oxi_sampling
+    global running, ser, ser_device, ble_loop, ble_loop_thread, is_sampling
 
     if running: return
     ppg_monitor.reset()  # nao misturar sessoes USB, BLE ou reconexoes
@@ -1332,9 +1268,7 @@ def start_bridge():
     if game_port == "Somente monitor":
         game_port = ""
     ser = None
-    ser_oxi = None
     ser_device = None
-    oxi_sampling = False
     
     if game_port:
         if not game_port.startswith("\\\\.\\"):
@@ -1350,23 +1284,10 @@ def start_bridge():
         log("Aviso: Nenhuma porta do jogo selecionada. Rodando como Monitor.")
         set_indicator(status_serial, False)
 
-    oxi_port = oxi_port_var.get()
-    if oxi_port and oxi_port != "Somente monitor":
-        if oxi_port == port_var.get() or oxi_port == device_port_var.get():
-            log("Oxímetro: porta conflita com a porta de pressão ou do dispositivo.")
-        else:
-            try:
-                oxi_serial_name = oxi_port if oxi_port.startswith("\\\\.\\") else "\\\\.\\{}".format(oxi_port)
-                ser_oxi = serial.Serial(oxi_serial_name, BAUDRATE, timeout=0.1)
-                log(f"Porta virtual Oxímetro conectada: {oxi_port}")
-            except Exception as e:
-                log(f"Falha ao abrir a COM virtual do oxímetro: {e}")
-    
     running = True
     bridge_btn.configure(text="Desconectar", fg_color="#dc3545", hover_color="#c82333")
     refresh_btn.configure(state="disabled")
     port_combo.configure(state="disabled")
-    oxi_port_combo.configure(state="disabled")
     device_port_combo.configure(state="disabled")
     conn_mode_segmented.configure(state="disabled")
 
@@ -1415,22 +1336,18 @@ def start_bridge():
 
     threading.Thread(target=serial_read_loop, daemon=True).start()
     threading.Thread(target=interpolation_loop, daemon=True).start()
-    if ser_oxi:
-        threading.Thread(target=oximeter_command_loop, daemon=True).start()
 
 def stop_bridge():
-    global running, ser, ser_oxi, ser_device, is_sampling, oxi_sampling
+    global running, ser, ser_device, is_sampling
 
     if not running: return
 
     running = False
     is_sampling = False
-    oxi_sampling = False
     
     bridge_btn.configure(text="Conectar", fg_color="#28a745", hover_color="#218838")
     refresh_btn.configure(state="normal")
     port_combo.configure(state="normal")
-    oxi_port_combo.configure(state="normal")
     device_port_combo.configure(state="normal")
     conn_mode_segmented.configure(state="normal")
     calib_btn.configure(state="disabled")
@@ -1476,13 +1393,6 @@ def stop_bridge():
             log("Porta USB do ESP32 fechada.")
     except Exception as e:
         log(f"Erro fechando USB ESP32: {e}")
-
-    try:
-        if ser_oxi and ser_oxi.is_open:
-            ser_oxi.close()
-            log("Porta virtual do oxímetro fechada.")
-    except Exception as exc:
-        log(f"Erro fechando COM oxímetro: {exc}")
 
     log("Desconectado.")
 

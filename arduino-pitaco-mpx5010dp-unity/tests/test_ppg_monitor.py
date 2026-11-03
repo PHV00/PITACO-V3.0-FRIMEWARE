@@ -148,6 +148,12 @@ class PpgMonitorTests(unittest.TestCase):
         ):
             ast.parse(source, filename=filename)
         gui = main_source + pneumo_source + cardio_source
+        # O oxímetro é parte do ESP32 e chega pelo JSON já recebido;
+        # o middleware não deve recriar uma porta COM para ele.
+        for forbidden in ("oxi_port_var", "oxi_port_combo", "ser_oxi",
+                          "oxi_sampling", "oximeter_command_loop",
+                          "oximeter_game_port", "last_oxi_sent"):
+            self.assertNotIn(forbidden, main_source)
         for token in (
             "ppg_monitor.observe(msg, source=source)",
             'source="BLE"', 'source="USB"',
@@ -179,7 +185,6 @@ class PpgMonitorTests(unittest.TestCase):
             "if not is_plotting:",
             "ppg_monitor.csv.start(target)",
             "ppg_monitor.csv.stop()",
-            "oxi_sampling and ser_oxi",
             "PPG_NOTIFY_UUID",
             "CHARACTERISTIC_UUID"
         ):

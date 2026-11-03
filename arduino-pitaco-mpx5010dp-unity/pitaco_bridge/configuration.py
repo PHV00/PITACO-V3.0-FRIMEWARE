@@ -33,7 +33,6 @@ DEFAULT_CONFIG = {
     "scale_multiplier": 5.0,
     "scale_key": "5.0x",
     "game_port": "Somente monitor",
-    "oximeter_game_port": "Somente monitor",
     "device_port": ""
 }
 

@@ -31,7 +31,7 @@ A PR #4 que experimenta transmissão binária permanece separada.
           ├── botão Gráfico Pneumo → janela original pressão/fluxo
           ├── botão Monitor Cardíaco / SpO2 → nova janela RED/IR e BPM
           ├── COM virtual pressao -> Unity (preservada)
-          └── COM virtual oximetro -> Unity (preservada)
+          └── BPM e SpO2: apenas monitor local, sem COM adicional
 
 ## Responsabilidades
 
@@ -101,9 +101,9 @@ e zero perda na fila CSV; dados sem esse requisito não provam perda zero.
 ## Limitações e critérios
 
 - A GUI não valida qualidade clínica do sinal, BPM nem SpO2.
-- O contrato Unity anterior permanece: COM virtual para pressão, COM
-  virtual do oxímetro opcional para BPM qualificado e sentinela de
-  SpO2 indisponível. Não interpretar sentinela 0 como SpO2 real.
+- A Unity continua com a COM virtual de pressão/fluxo do jogo respiratório.
+  O BPM e a SpO₂ experimentais são exibidos localmente, sem COM virtual
+  adicional e sem novo contrato de integração com a Unity.
 - A taxa recebida mostra comportamento combinado da placa, rádio,
   Windows e GUI. Para distinguir problema FIFO de BLE,
   confrontar com telemetria USB X,PPG_DIAG e seus contadores.
@@ -135,11 +135,10 @@ própria; não é calculada nesta mudança de middleware.
 | usb_read_device_loop | ble_client_mpx5010dp.py | USB → lê LF/echop/zero/pressão/JSON e usa o mesmo parser |
 | parse_pitaco_line | pitaco24_protocol.py | Linha → valida pressão numérica ou JSON sample/G1 e descarta estrutura inválida |
 | BleJsonlBuffer.feed | pitaco24_protocol.py | Bytes BLE → acumula até LF e só entrega linha completa |
-| process_pitaco_line | ble_client_mpx5010dp.py | Mensagem válida → atualiza monitor e preserva regras anteriores de pressão e BPM para Unity |
+| process_pitaco_line | gui/main_window.py | Mensagem válida → atualiza monitor PPG e pressão do jogo (BPM fica no monitor) |
 | update_pressure_from_device | ble_client_mpx5010dp.py | Pa → fluxo estimado, filtro e buffers do gráfico pneumográfico |
 | PressureFilter.process | ble_client_mpx5010dp.py | Fluxo estimado → filtro configurável do pneumo, sem alterar RED/IR |
 | interpolation_loop | ble_client_mpx5010dp.py | Fluxo/pressão → escreve série contínua na COM do jogo respiratório |
-| oximeter_command_loop | ble_client_mpx5010dp.py | COM virtual oxímetro → responde echox e inicia/para por r/f |
 | send_ble_command | ble_client_mpx5010dp.py | r/f/c/z → preserva envio pela characteristic original ou USB física |
 | stop_bridge | ble_client_mpx5010dp.py | Desconexão → fecha janelas, finaliza CSV e libera COM/USB/BLE |
 
@@ -212,9 +211,9 @@ medição. SpO₂ experimental **não é dispositivo médico nem prova de precis
 
 A atualização ocorre a cada ~1 segundo de telemetria; todo cálculo é no
 PC, independente do filtro do pneumógrafo, e só quando a checkbox está
-ativa. O resultado experimental NÃO alimenta o contrato de jogo
-`FC,SpO2`: a saída original da Unity continua transmitindo somente BPM
-qualificado do firmware quando permitido, com SpO₂ indisponível.
+ativa. O resultado experimental **não é transmitido à Unity**. Esta versão da ponte
+mantém somente a COM virtual de pressão/fluxo para o jogo respiratório.
+O monitor recebe RED/IR, BPM e SQI pelo JSON do ESP32, sem COM adicional.
 
 **Referências técnicas do algoritmo, não provas de acurácia:**
 
