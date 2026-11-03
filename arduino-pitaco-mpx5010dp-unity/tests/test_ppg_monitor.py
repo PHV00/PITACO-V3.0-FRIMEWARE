@@ -97,6 +97,26 @@ class PpgMonitorTests(unittest.TestCase):
             self.assertEqual(records[2]["pressure_pa"], "18.5")
             self.assertEqual(m.snapshot()["csv_dropped"], 0)
 
+    def test_bpm_history_rejects_bad_gate_and_contact(self):
+        m = PpgMonitor()
+        m.observe(sample(1, 1000, bpm=72.0), "BLE", now=100.0)
+        self.assertEqual(m.snapshot()["bpm"], 72.0)
+        m.observe(sample(2, 1040, contact=False, g1=False, bpm=88.0),
+                  "BLE", now=100.04)
+        snap = m.snapshot()
+        self.assertIsNone(snap["bpm"])
+        self.assertEqual(snap["bpm_history"], [(1.0, 72.0), (1.04, None)])
+        self.assertEqual(snap["samples"], 2)
+
+    def test_bpm_history_reset_does_not_keep_previous_session(self):
+        m = PpgMonitor()
+        m.observe(sample(1, 1000, bpm=65.1), "USB")
+        self.assertEqual(len(m.snapshot()["bpm_history"]), 1)
+        m.reset()
+        snap = m.snapshot()
+        self.assertEqual(snap["samples"], 0)
+        self.assertEqual(snap["bpm_history"], [])
+
     def test_gui_wires_both_streams_without_touching_firmware(self):
         gui = (pathlib.Path(__file__).resolve().parents[1] /
                "ble_client_mpx5010dp.py").read_text(encoding="utf-8")
@@ -107,6 +127,15 @@ class PpgMonitorTests(unittest.TestCase):
             "ppg_monitor.note_invalid_json()",
             "line_red.set_data(xs, red_values)",
             "line_ir.set_data(xs, ir_values)",
+            "line_bpm.set_data(",
+            'text="Gráfico Pneumo"',
+            'text="Monitor Cardíaco / SpO₂"',
+            "ppg_window = ctk.CTkToplevel(root)",
+            "ppg_fig, (ax_ppg, ax_bpm) = plt.subplots(",
+            "ani_ppg = animation.FuncAnimation",
+            "SpO₂: não calculada",
+            "if not is_ppg_plotting:",
+            "if not is_plotting:",
             "ppg_monitor.csv.start(target)",
             "ppg_monitor.csv.stop()",
             "oxi_sampling and ser_oxi",
