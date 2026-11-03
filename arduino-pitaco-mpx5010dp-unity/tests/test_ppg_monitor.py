@@ -150,13 +150,15 @@ class PpgMonitorTests(unittest.TestCase):
         self.assertIn("pitaco_router.feed_ble_ppg(bytes(data))", gui)
         self.assertIn("pitaco_router.process_line(", gui)
         self.assertIn("pitaco_router.reset_ble()", gui)
+        transport = (base / "pitaco_bridge" / "transport.py").read_text(encoding="utf-8")
+        self.assertIn("self.monitor.observe(msg, source=source)", transport)
 
     def test_gui_wires_both_streams_without_touching_firmware(self):
         gui = (pathlib.Path(__file__).resolve().parents[1] /
                "pitaco_bridge" / "gui.py").read_text(encoding="utf-8")
-        ast.parse(gui, filename="ble_client_mpx5010dp.py")
+        ast.parse(gui, filename="pitaco_bridge/gui.py")
         for token in (
-            "ppg_monitor.observe(msg, source=source)",
+            "pitaco_router.process_line(line_str, allow_pressure=allow_pressure,",
             'source="BLE"', 'source="USB"',
             "pitaco_router.feed_ble_ppg",
             "pitaco_router.process_line",
