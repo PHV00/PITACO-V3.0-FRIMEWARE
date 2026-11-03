@@ -136,6 +136,7 @@ class PpgMonitorTests(unittest.TestCase):
             "ani_ppg = animation.FuncAnimation",
             "SpO₂: não calculada",
             "if not is_ppg_plotting:",
+            "if not was_active and not is_sampling:",
             "if not is_plotting:",
             "ppg_monitor.csv.start(target)",
             "ppg_monitor.csv.stop()",
