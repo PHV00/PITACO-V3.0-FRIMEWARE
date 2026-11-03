@@ -1,37 +1,64 @@
-# PITACO 2.4 — reorganização do middleware Python existente
+# PITACO 2.4 — middleware Python dividido por telas
 
-**Escopo:** recortar o código preexistente e colocá-lo em arquivos por responsabilidade. Nenhum novo algoritmo, protocolo BLE, cálculo de BPM, regra G1 ou alteração no firmware.
+A reorganização desta etapa move **as telas e seus callbacks já existentes**
+para três arquivos, sem modificar protocolo USB/BLE, lógica da Unity,
+Gate 01, detector de BPM ou cálculo experimental de SpO₂.
 
 ```text
 arduino-pitaco-mpx5010dp-unity/
-├── ble_client_mpx5010dp.py    # MAIN: inicia interface
-├── pitaco_bridge/
-│   ├── gui.py                  # janela original, conexões USB/BLE, gráficos, OTA, Unity
-│   ├── configuration.py        # defaults, load_config(), get_config_path()
-│   ├── ports.py                # get_all_com_ports()
-│   ├── pneumo.py               # calculate_flow(), flow_to_pressure(), PressureFilter
-│   ├── protocol.py             # parse_pitaco_line(), BleJsonlBuffer
-│   ├── monitor.py              # PpgMonitor, PpgCsvRecorder
-│   └── experimental.py         # estimativas experimentais BPM / SpO2
-├── pitaco24_protocol.py       # import antigo preservado
-├── pitaco24_monitor.py        # import antigo preservado
-├── pitaco24_experimental.py   # import antigo preservado
-└── tests/                     # testes existentes
+├── ble_client_mpx5010dp.py     # Entrada original (não mudou)
+└── pitaco_bridge/
+    ├── gui/
+    │   ├── __init__.py         # Reexporta run_gui()
+    │   ├── main_window.py      # Janela principal, botões, USB/BLE, OTA e Unity
+    │   ├── pneumo_view.py      # Janela respiratória, gráfico e aferições
+    │   └── cardio_view.py      # Janela óptica, RED/IR, BPM, SpO₂ demo e CSV
+    ├── configuration.py
+    ├── ports.py
+    ├── pneumo.py
+    ├── protocol.py
+    ├── monitor.py
+    └── experimental.py
 ```
 
-## Preservação da versão anterior
+## Divisão das funções originais
 
-O código de `gui.py` é o original, menos os trechos movidos para `configuration.py`, `ports.py` e `pneumo.py`. As funções de USB, BLE, Unity, zero, OTA, gráficos e processamento de PPG não foram substituídas por novas implementações.
+| Módulo | Responsabilidades existentes |
+|---|---|
+| `main_window.py` | criar a janela principal; botões de conexão, comandos, configuração e OTA; conexão BLE/USB compartilhada; ponte COM e Unity |
+| `pneumo_view.py` | janela respiratória; exibição de fluxo/pressão; relatório e aferições de pico, taxa e tempo inspiratório/expiratório |
+| `cardio_view.py` | janela PPG; curvas RED/IR, BPM firmware/Python e SpO₂ demonstrativa; indicadores G1 e botão de CSV |
+| `protocol.py` | ler mensagens PPG JSONL e recompor fragmentos BLE; inalterado |
+| `monitor.py` | estado, histórico, contadores de perdas e gravador CSV; inalterado |
+| `experimental.py` | BPM experimental e relação RED/IR; inalterado |
+| `pneumo.py` | modelo e filtro de fluxo; inalterado |
 
-O módulo `pneumo.py` mantém as fórmulas e o filtro respiratório como antes. A única adaptação ao mover a variável global é: `set_flow_multiplier()` agora altera `pneumo.flow_multiplier`; `save_config()` lê o mesmo valor no módulo.
+### Um único estado de aplicação
 
-Os arquivos de compatibilidade só importam e exportam as classes/funções que já existiam; os cálculos foram movidos, não duplicados.
+Os botões e o controle de aquisição continuam em `main_window.py`.
+As duas views são criadas por `create_pneumo_view(app)` e
+`create_cardio_view(app)`, recebendo o módulo principal como referência
+aos dados e ao estado compartilhados. Assim, não duplicam as conexões
+BLE/USB ou as filas. A leitura de flags (`is_plotting`,
+`is_ppg_plotting`, `running`) e métricas respiratórias é dinâmica;
+nenhum valor é copiado para outra instância de sessão.
 
-## Como executar
+`main_window.py` mantém referências aos widgets necessários para
+abrir e fechar janelas e encerrar uma gravação CSV. Os demais
+elementos visuais ficam encapsulados nas próprias views. Esta é uma
+divisão de apresentação e localização das funções; os cálculos continuam
+nos módulos que já existiam.
+
+## Execução e validação
+
+Na pasta do sketch, como anteriormente:
 
 ```powershell
 python .\ble_client_mpx5010dp.py
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-A interface gráfica continua reunida em `gui.py` porque seus callbacks compartilham variáveis globais da aplicação original. Separar as views requer uma segunda alteração de injeção/encapsulamento de estado, a ser feita separadamente e testada.
+Verificar no Windows as duas janelas simultâneas, aferições, abertura e
+fechamento sem interromper a outra, conexão BLE/USB, CSV e Unity.
+Os testes automatizados checam sintaxe/contratos; não substituem o teste
+físico nem a GUI real.

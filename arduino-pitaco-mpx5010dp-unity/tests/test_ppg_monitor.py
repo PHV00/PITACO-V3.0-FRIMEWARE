@@ -136,9 +136,18 @@ class PpgMonitorTests(unittest.TestCase):
         self.assertEqual(snap["bpm_history"], [])
 
     def test_gui_wires_both_streams_without_touching_firmware(self):
-        gui = (pathlib.Path(__file__).resolve().parents[1] /
-               "pitaco_bridge" / "gui.py").read_text(encoding="utf-8")
-        ast.parse(gui, filename="pitaco_bridge/gui.py")
+        gui_dir = (pathlib.Path(__file__).resolve().parents[1] /
+                   "pitaco_bridge" / "gui")
+        main_source = (gui_dir / "main_window.py").read_text(encoding="utf-8")
+        pneumo_source = (gui_dir / "pneumo_view.py").read_text(encoding="utf-8")
+        cardio_source = (gui_dir / "cardio_view.py").read_text(encoding="utf-8")
+        for filename, source in (
+            ("main_window.py", main_source),
+            ("pneumo_view.py", pneumo_source),
+            ("cardio_view.py", cardio_source),
+        ):
+            ast.parse(source, filename=filename)
+        gui = main_source + pneumo_source + cardio_source
         for token in (
             "ppg_monitor.observe(msg, source=source)",
             'source="BLE"', 'source="USB"',
