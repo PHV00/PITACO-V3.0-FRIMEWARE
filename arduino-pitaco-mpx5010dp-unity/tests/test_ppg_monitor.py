@@ -101,13 +101,30 @@ class PpgMonitorTests(unittest.TestCase):
     def test_bpm_history_rejects_bad_gate_and_contact(self):
         m = PpgMonitor()
         m.observe(sample(1, 1000, bpm=72.0), "BLE", now=100.0)
-        self.assertEqual(m.snapshot()["bpm"], 72.0)
+        self.assertEqual(m.snapshot(now=100.0)["bpm"], 72.0)
+        self.assertEqual(m.snapshot(now=100.0)["fw_bpm_status"],
+                         "BPM firmware valido")
         m.observe(sample(2, 1040, contact=False, g1=False, bpm=88.0),
                   "BLE", now=100.04)
-        snap = m.snapshot()
+        snap = m.snapshot(now=100.04)
+        self.assertEqual(snap["fw_bpm_status"], "Sem contato")
         self.assertIsNone(snap["bpm"])
         self.assertEqual(snap["bpm_history"], [(1.0, 72.0), (1.04, None)])
         self.assertEqual(snap["samples"], 2)
+
+    def test_bpm_missing_reason_and_stale_timeout(self):
+        m = PpgMonitor()
+        m.observe(sample(1, 1000, bpm=None), "BLE", now=100.00)
+        good = m.snapshot(now=100.05)
+        self.assertIsNone(good["bpm"])
+        self.assertEqual(good["fw_bpm_status"],
+                         "Firmware ainda sem BPM valido")
+        m.observe(sample(2, 1040, bpm=72.0), "BLE", now=100.04)
+        self.assertEqual(m.snapshot(now=100.08)["bpm"], 72.0)
+        expired = m.snapshot(now=102.10)
+        self.assertIsNone(expired["bpm"])
+        self.assertEqual(expired["fw_bpm_status"], "Sem amostras recentes")
+        self.assertEqual(expired["bpm_history"][-1], (1.04, 72.0))
 
     def test_bpm_history_reset_does_not_keep_previous_session(self):
         m = PpgMonitor()
@@ -141,6 +158,11 @@ class PpgMonitorTests(unittest.TestCase):
             "ppg_monitor.set_experimental_enabled(",
             "Calcular BPM e SpO₂ experimentais NO PYTHON",
             "line_bpm_exp.set_data(",
+            "bpm_fw_corner.set_text(",
+            "bpm_py_corner.set_text(",
+            "fw_bpm_status",
+            "ESP32: -- BPM",
+            "Python EXP.: -- BPM",
             "line_spo2_exp.set_data(",
             "NÃO CALIBRADA / NÃO VALIDADA",
             "if not is_ppg_plotting:",
