@@ -121,3 +121,52 @@ com RED/IR originais de 18 bits preservados na telemetria. Não habilitar
 verde para a GUI: ele não é necessário para BPM em IR, e não existe no
 MAX30102. SpO2 demanda algoritmo de oximetria e calibração/validação
 própria; não é calculada nesta mudança de middleware.
+
+## Referência função por função do middleware Python
+
+### Transporte e parser (pré-existentes, reutilizados)
+
+| Função | Arquivo | Entrada → operação → saída |
+| --- | --- | --- |
+| start_bridge | ble_client_mpx5010dp.py | Escolha da conexão/COM → abre porta e threads de monitoramento |
+| ble_bridge | ble_client_mpx5010dp.py | BLE → descobre PITACO, assina pressão legacy + PPG JSON e inicia coleta no modo monitor |
+| notification_handler | ble_client_mpx5010dp.py | Fragmentos da characteristic de pressão → reconstrói LF, encaminha pressão, echop e zero |
+| ppg_notification_handler | ble_client_mpx5010dp.py | Fragmentos do canal óptico → remonta JSONL, contabiliza notificação e JSON inválido |
+| usb_read_device_loop | ble_client_mpx5010dp.py | USB → lê LF/echop/zero/pressão/JSON e usa o mesmo parser |
+| parse_pitaco_line | pitaco24_protocol.py | Linha → valida pressão numérica ou JSON sample/G1 e descarta estrutura inválida |
+| BleJsonlBuffer.feed | pitaco24_protocol.py | Bytes BLE → acumula até LF e só entrega linha completa |
+| process_pitaco_line | ble_client_mpx5010dp.py | Mensagem válida → atualiza monitor e preserva regras anteriores de pressão e BPM para Unity |
+| update_pressure_from_device | ble_client_mpx5010dp.py | Pa → fluxo estimado, filtro e buffers do gráfico pneumográfico |
+| PressureFilter.process | ble_client_mpx5010dp.py | Fluxo estimado → filtro configurável do pneumo, sem alterar RED/IR |
+| interpolation_loop | ble_client_mpx5010dp.py | Fluxo/pressão → escreve série contínua na COM do jogo respiratório |
+| oximeter_command_loop | ble_client_mpx5010dp.py | COM virtual oxímetro → responde echox e inicia/para por r/f |
+| send_ble_command | ble_client_mpx5010dp.py | r/f/c/z → preserva envio pela characteristic original ou USB física |
+| stop_bridge | ble_client_mpx5010dp.py | Desconexão → fecha janelas, finaliza CSV e libera COM/USB/BLE |
+
+### Modelagem do teste (novo; não altera aquisição)
+
+| Função | Arquivo | Operação |
+| --- | --- | --- |
+| PpgMonitor.reset | pitaco24_monitor.py | Zera contadores e históricos ao começar nova conexão |
+| PpgMonitor.observe | pitaco24_monitor.py | Registra amostras/pressão/G1, seq uint16, gaps, duplicatas, contato e BPM qualificado |
+| PpgMonitor.snapshot | pitaco24_monitor.py | Copia estado estável para GUI, sem acessar Tk nos callbacks |
+| PpgMonitor.note_ble_fragment | pitaco24_monitor.py | Conta notificações recebidas do canal PPG |
+| PpgMonitor.note_invalid_json | pitaco24_monitor.py | Conta linhas BLE completas inválidas; não deve ser confundido com G1 reprovado |
+| PpgCsvRecorder.start | pitaco24_monitor.py | Abre caminho CSV e inicia thread escrita |
+| PpgCsvRecorder.record | pitaco24_monitor.py | Enfileira RAW e eventos no callback sem bloquear escrita em disco |
+| PpgCsvRecorder._writer | pitaco24_monitor.py | Consome fila, escreve linhas CSV e atualiza contador |
+| PpgCsvRecorder.stop | pitaco24_monitor.py | Termina gravação e espera encerramento da thread |
+
+### Interfaces independentes (novas e preservadas)
+
+| Função | Papel |
+| --- | --- |
+| open_graph / close_graph | Abre/fecha só o gráfico pneumo; preserva aquisição se o painel óptico está aberto |
+| open_ppg_graph / close_ppg_graph | Abre/fecha só monitor cardíaco; preserva aquisição se pneumo está aberto |
+| update_plot | Mantém fluxo/pressão e escalas originais |
+| update_ppg_plot | Desenha RAW RED/IR, histórico BPM e indicadores G1, contato, erros e throughput |
+| toggle_ppg_csv | Controla gravação opcional a partir do painel óptico |
+
+O início da aquisição é compartilhado: em modo somente monitor a ponte já
+envia r ao conectar; abrir qualquer gráfico **não deve repetir r** se
+is_sampling já está ativo. Nenhum gráfico roda processamento SQI novo.
