@@ -25,6 +25,7 @@ from bleak import BleakClient, BleakScanner
 from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 import matplotlib.animation as animation
 if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
     os.chdir(sys._MEIPASS)
@@ -1841,9 +1842,10 @@ ppg_csv_btn = ctk.CTkButton(
     command=toggle_ppg_csv)
 ppg_csv_btn.pack(anchor="e", padx=12, pady=(2, 8))
 
-ppg_fig, (ax_ppg, ax_bpm) = plt.subplots(
-    2, 1, figsize=(8, 6.3), dpi=100, sharex=True,
-    gridspec_kw={"height_ratios": (1.8, 1)})
+ppg_fig = Figure(figsize=(8, 6.3), dpi=100)
+ppg_grid = ppg_fig.add_gridspec(2, 1, height_ratios=(1.8, 1))
+ax_ppg = ppg_fig.add_subplot(ppg_grid[0])
+ax_bpm = ppg_fig.add_subplot(ppg_grid[1], sharex=ax_ppg)
 ppg_fig.patch.set_facecolor("#2b2b2b")
 ppg_fig.subplots_adjust(hspace=0.18, left=0.11, right=0.96,
                          top=0.95, bottom=0.10)
