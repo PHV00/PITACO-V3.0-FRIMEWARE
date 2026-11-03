@@ -113,6 +113,43 @@ nesta iteracao. Solicitar `ppg_contato_60s.csv`, analisar canais,
 BPM, variacao, timestamps e as transicoes de cada fase antes de implementar
 um mecanismo rapido de presenca de dedo ou alterar o Gate 01.
 
+## Leitura dos dados brutos e ajuste de contato (02/11/2026)
+
+O CSV enviado mostra queda do RED/IR em ~15,53 s (RED ~34.017,
+IR ~35.824) depois de valores ~102 mil/~113 mil. Em ~16,09 s,
+os dois canais estavam abaixo de 3 mil; o platô sem dedo foi
+~1.400 RED/~1.100 IR até ~31,14 s. O retorno ocorre em ~31,2 s
+com subida acima de 90 mil nos dois canais.
+
+A janela G1 4 foi PASS mesmo contendo varios segundos sem dedo:
+a alta media inicial e o grande intervalo min/max da transicao
+enganam os thresholds estatisticos de cinco segundos.
+BPM e bpm_valid foram nulo/falso em todo o CSV apresentado.
+
+### Precondicao de contato (experimental)
+
+- Um par RED/IR opticamente apto exige ambos >=5000 e sem clipping.
+  Este criterio, baseado na grande separacao observada em bancada,
+  **nao e validador clinico de contato ou de PPG fisiologico**.
+- Sao necessarias 3 amostras consecutivas (~120 ms a 25 Hz depois da
+  travessia do limiar) para confirmar PRESENCA ou AUSENCIA.
+- Enquanto o contato instantaneo nao for apto, o JSON de sample
+  informa \`sqi.contact=false\`, \`sqi.g1=false\`, \`reason=10\`.
+  Assim nao se reutiliza PASS de uma janela antiga apos finger-off.
+- O status \`X,PPG_CONTACT,PRESENT\` ou \`X,PPG_CONTACT,ABSENT\`
+  confirma transicoes. O G1 e reiniciado ao mudar o estado de contato
+  para impedir que uma janela mista seja reutilizada como valida.
+- Os valores RAW sao SEMPRE enviados, inclusive sem dedo, para
+  auditoria. O calculo BPM exige contato confirmado e sample apto.
+- O diagnostico agora inclui \`beats=\` (deteccoes de checkForBeat
+  por intervalo de 2 segundos) e \`contact=\` (estado confirmado).
+  Isso ajudara a investigar o BPM que permaneceu ausente no CSV.
+- A ponte Python preserva as colunas antigas e acrescenta \`contact\`.
+
+**Pendencias:** verificar os novos campos em ESP32-C3, repetir os
+quatro estados com dedo, sem dedo, recolocacao e movimento; ajustar
+limiares com distribuicoes de varias coletas e validar BPM isolado.
+
 ## Politica nova
 
 ```text

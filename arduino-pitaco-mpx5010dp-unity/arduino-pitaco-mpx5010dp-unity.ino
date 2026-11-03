@@ -53,6 +53,8 @@ const float ZERO_REFERENCE_PA = 100.0f; // Referencia provisoria para testar a U
 #define MAX30105_SCL 5
 #define PPG_WINDOW_MS 5000UL
 #define PPG_POLL_GAP_MS 180UL
+#define PPG_CONTACT_MIN 5000UL  // provisorio, depende de ensaio
+#define PPG_CONTACT_CONFIRM_SAMPLES 3
 #define PPG_DIAG true  // Telemetria de bancada a cada 2s; desligar apos validacao
 #define PPG_DIAG_MS 2000UL
 #define BLE_JSON_CHUNK_BYTES 20  // Compativel com MTU minimo de 23
@@ -70,6 +72,10 @@ BLECharacteristic* pPpgCharacteristic = nullptr;
 MAX30105 max30105;
 bool ppgReady = false;
 bool ppgSampling = false;
+bool ppgContactPresent = false;
+uint8_t ppgContactGoodSamples = 0;
+uint8_t ppgContactBadSamples = 0;
+uint16_t ppgBeatDetections = 0;
 bool g1Ready = false;
 bool g1Passed = false;
 uint8_t g1Reason = 1;
@@ -118,6 +124,7 @@ void ResetPressureFilter();
 void SendStatus(const char* line);
 void StartTenSecondZero();
 void PollTenSecondZero();
+void ResetPpgContact();
 void InitMAX30105();
 void PollMAX30105();
 void SendPpgJson(const char* jsonLine);
@@ -478,6 +485,12 @@ float voutToPa() {
 // PITACO 2.4: MAX30105 RED/IR + frequencia cardiaca experimental.
 // Um unico orquestrador .ino; G1 em gate_01_integrity.ino.
 // ---------------------------------------------------------------------------
+void ResetPpgContact() {
+  ppgContactPresent = false;
+  ppgContactGoodSamples = 0;
+  ppgContactBadSamples = 0;
+}
+
 void InitMAX30105() {
   Wire.begin(MAX30105_SDA, MAX30105_SCL);
   if (!max30105.begin(Wire, I2C_SPEED_STANDARD)) {
@@ -494,6 +507,7 @@ void InitMAX30105() {
   // Evita que a FIFO encha antes da primeira coleta (32 registros fisicos).
   max30105.shutDown();
   max30105.clearFIFO();
+  ResetPpgContact();
   g1Reset();
   ppgReady = true;
   Serial.println("X,MAX30105_READY,RED_IR");
@@ -537,6 +551,7 @@ void PollMAX30105() {
       // uma janela parcial e intencionalmente encerrada ao comando de parada.
       max30105.shutDown();
       ppgSampling = false;
+      ResetPpgContact();
       g1Reset();
       g1Ready = false;
       g1Passed = false;
@@ -575,6 +590,7 @@ void PollMAX30105() {
       Serial.println("X,PPG_ERROR,WAKEUP_FAILED");
       return;
     }
+    ResetPpgContact();
     g1Reset();
     ppgSampling = true;
     ppgWindowStartMs = now;
@@ -582,6 +598,7 @@ void PollMAX30105() {
     ppgLastDiagMs = now;
     ppgDiagFound = 0;
     ppgDiagProcessed = 0;
+    ppgBeatDetections = 0;
     g1Ready = false;
     g1Passed = false;
     g1Reason = 1;
@@ -622,13 +639,55 @@ void PollMAX30105() {
     const uint32_t ir = max30105.getFIFOIR();
     const unsigned long receiveMs = millis(); // leitura FIFO, nao timestamp ADC
     ++ppgSeq;
+
+    // A aptidao optica independe do resultado de G1 calculado a cada 5s.
+    // Tres amostras consecutivas confirmam a mudanca de contato.
+    const bool opticalPresent = red >= PPG_CONTACT_MIN && ir >= PPG_CONTACT_MIN
+                                && red < (262143UL - 2048UL)
+                                && ir < (262143UL - 2048UL);
+    if (opticalPresent) {
+      ppgContactBadSamples = 0;
+      if (ppgContactGoodSamples < PPG_CONTACT_CONFIRM_SAMPLES)
+        ++ppgContactGoodSamples;
+      if (!ppgContactPresent &&
+          ppgContactGoodSamples >= PPG_CONTACT_CONFIRM_SAMPLES) {
+        ppgContactPresent = true;
+        // Exigir janela NOVA apos retomar contato: nao herdar PASS antigo.
+        g1Reset();
+        ppgWindowStartMs = receiveMs;
+        g1Ready = false;
+        g1Passed = false;
+        g1Reason = 1;
+        heartBpm = 0.0f;
+        lastBeatMs = 0;
+        Serial.println("X,PPG_CONTACT,PRESENT");
+      }
+    } else {
+      ppgContactGoodSamples = 0;
+      if (ppgContactBadSamples < PPG_CONTACT_CONFIRM_SAMPLES)
+        ++ppgContactBadSamples;
+      if (ppgContactPresent &&
+          ppgContactBadSamples >= PPG_CONTACT_CONFIRM_SAMPLES) {
+        ppgContactPresent = false;
+        // Descartar janela mista; manter RAW disponivel para diagnostico.
+        g1Reset();
+        ppgWindowStartMs = receiveMs;
+        g1Ready = false;
+        g1Passed = false;
+        g1Reason = 10;
+        heartBpm = 0.0f;
+        lastBeatMs = 0;
+        Serial.println("X,PPG_CONTACT,ABSENT");
+      }
+    }
     g1Add(red, ir);
 
     // checkForBeat(IR) da SparkFun: BPM e estimativa experimental.
     // Nunca fornecer BPM como valido antes de G1 PASS.
     // SparkFun heartRate.cpp utiliza uint16_t e int16_t internamente.
     // Normalizar 18-bit -> 15-bit apenas para BPM: RAW permanece 18-bit.
-    if (ir > 5000 && checkForBeat((int32_t)(ir >> 3))) {
+    if (ppgContactPresent && opticalPresent && checkForBeat((int32_t)(ir >> 3))) {
+      ++ppgBeatDetections;
       if (lastBeatMs > 0) {
         const unsigned long delta = receiveMs - lastBeatMs;
         if (delta >= 300 && delta <= 1714) {  // 35 a 200 BPM
@@ -644,15 +703,19 @@ void PollMAX30105() {
 
     // Tambem bloquear envio imediato se esta amostra perder o contato
     // optico, sem esperar o fim da proxima janela G1.
-    const bool opticalPresent = red >= 5000 && ir >= 5000
-                               && red < (262143UL - 2048UL)
-                               && ir < (262143UL - 2048UL);
-    const bool bpmValid = g1Ready && g1Passed && opticalPresent && heartBpm > 0
+    const bool instantContact = ppgContactPresent && opticalPresent;
+    const bool bpmValid = g1Ready && g1Passed && instantContact && heartBpm > 0
                        && lastBeatMs > 0
                        && (unsigned long)(receiveMs - lastBeatMs) <= 2000UL;
     char bpm[16];
     if (bpmValid) snprintf(bpm, sizeof(bpm), "%.1f", heartBpm);
     else strcpy(bpm, "null");
+
+    // Nao divulgar G1 PASS antigo enquanto a amostra atual for inadequada.
+    // reason=10 e exclusivo do JSON de amostras: CONTACT_ABSENT.
+    const char* effectiveG1 = !instantContact ? "false" :
+                              (g1Ready ? (g1Passed ? "true" : "false") : "null");
+    const uint8_t effectiveReason = instantContact ? g1Reason : 10;
 
     // JSON por linha: mesmo esquema USB / BLE, sem dependencias de ArduinoJson.
     // Pressao amostrada a 20Hz; RED/IR, cerca de 25Hz efetivos.
@@ -662,12 +725,12 @@ void PollMAX30105() {
         "{\"type\":\"sample\",\"seq\":%u,\"t_ms\":%lu,"
         "\"ppg\":{\"red\":%lu,\"ir\":%lu,\"bpm\":%s,\"bpm_valid\":%s},"
         "\"mpx5010dp\":{\"pressure_pa\":%.2f,\"valid\":%s},"
-        "\"sqi\":{\"g1\":%s,\"reason\":%u}}\n",
+        "\"sqi\":{\"g1\":%s,\"reason\":%u,\"contact\":%s}}\n",
         (unsigned)ppgSeq, receiveMs, (unsigned long)red,
         (unsigned long)ir, bpm, bpmValid ? "true" : "false",
         latestPressurePa, pressureValid ? "true" : "false",
-        g1Ready ? (g1Passed ? "true" : "false") : "null",
-        (unsigned)g1Reason);
+        effectiveG1, (unsigned)effectiveReason,
+        instantContact ? "true" : "false");
     if (written > 0 && written < (int)sizeof(line)) SendPpgJson(line);
     max30105.nextSample();
     ++ppgDiagProcessed;
@@ -721,12 +784,14 @@ void PollMAX30105() {
     const uint8_t wr = max30105.getWritePointer();
     const uint8_t rd = max30105.getReadPointer();
     Serial.printf(
-      "X,PPG_DIAG,novas=%lu,processadas=%lu,wr=%u,rd=%u,ovf=%u\n",
+      "X,PPG_DIAG,novas=%lu,processadas=%lu,wr=%u,rd=%u,ovf=%u,beats=%u,contact=%u\n",
       (unsigned long)ppgDiagFound, (unsigned long)ppgDiagProcessed,
       (unsigned)wr, (unsigned)rd,
-      (unsigned)max30105.readRegister8(0x57, 0x05));
+      (unsigned)max30105.readRegister8(0x57, 0x05),
+      (unsigned)ppgBeatDetections, ppgContactPresent ? 1U : 0U);
     ppgDiagFound = 0;
     ppgDiagProcessed = 0;
+    ppgBeatDetections = 0;
   }
 #endif
 
@@ -734,6 +799,7 @@ void PollMAX30105() {
     uint16_t samples = 0;
     uint8_t reason = 1;
     g1Passed = g1Evaluate(&reason, &samples);
+    if (!ppgContactPresent) g1Passed = false;
     g1Reason = reason;
     g1Ready = true;
     SendG1Json(reason, samples);

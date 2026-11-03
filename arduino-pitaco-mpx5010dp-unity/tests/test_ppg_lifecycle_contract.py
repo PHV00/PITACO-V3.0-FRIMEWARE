@@ -61,6 +61,17 @@ class AcquisitionLifecycleContract(unittest.TestCase):
         self.assertLess(reset.index('Serial.println("X,PPG_FIFO_RECOVERED")'),
                         reset.index("#if PPG_DIAG"))
 
+    def test_live_contact_invalidates_stale_g1(self):
+        f = body("PollMAX30105")
+        for token in ("PPG_CONTACT_CONFIRM_SAMPLES", "PPG_CONTACT,PRESENT",
+                      "PPG_CONTACT,ABSENT", "instantContact",
+                      "effectiveG1", "effectiveReason",
+                      "ppgWindowStartMs = receiveMs",
+                      "if (!ppgContactPresent) g1Passed = false;",
+                      "beats=%u,contact=%u", "g1Reset();"):
+            self.assertIn(token, f if token != "PPG_CONTACT_CONFIRM_SAMPLES" else SKETCH)
+        self.assertEqual(f.count("const bool opticalPresent"), 1)
+
     def test_g1_and_raw_values_are_preserved(self):
         f = body("PollMAX30105")
         for token in ("g1Add(red, ir);", "getFIFORed()",

@@ -22,7 +22,7 @@ def main():
             a.csv, "w", newline="", encoding="utf-8") as output:
         writer = csv.writer(output)
         writer.writerow(["type", "seq", "t_ms", "red", "ir", "bpm",
-                         "bpm_valid", "pressure_pa", "g1", "reason", "samples"])
+                         "bpm_valid", "pressure_pa", "g1", "reason", "samples", "contact"])
         time.sleep(1.5)
         dev.write(b"e")
         time.sleep(0.15)
@@ -49,7 +49,8 @@ def main():
                     writer.writerow([kind, seq, msg.get("t_ms"),
                                      ppg["red"], ppg["ir"], ppg.get("bpm"),
                                      ppg.get("bpm_valid"), mpx.get("pressure_pa"),
-                                     g1.get("g1"), g1.get("reason"), ""])
+                                     g1.get("g1"), g1.get("reason"), "",
+                                     g1.get("contact")])
                     raw_count += 1
                 elif kind == "g1":
                     quality_count += 1
@@ -57,10 +58,10 @@ def main():
                     print("G1", msg.get("window"), g1)
                     writer.writerow([kind, "", msg.get("t_ms"), "", "", "", "",
                                      "", g1.get("g1"), g1.get("reason"),
-                                     g1.get("samples")])
+                                     g1.get("samples"), ""])
                 elif kind == "pressure":
                     writer.writerow([kind, "", "", "", "", "", "",
-                                     msg["mpx5010dp"]["pressure_pa"], "", "", ""])
+                                     msg["mpx5010dp"]["pressure_pa"], "", "", "", ""])
         finally:
             dev.write(b"f")
     print("Amostras PPG", raw_count, "janelas G1", quality_count,
