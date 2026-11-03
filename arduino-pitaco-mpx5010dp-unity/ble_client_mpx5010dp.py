@@ -737,10 +737,12 @@ def send_ble_command(cmd):
 def open_graph():
     """Abre exclusivamente o painel respiratorio original."""
     global is_plotting
+    was_active = is_ppg_plotting
     is_plotting = True
     plot_window.deiconify()
     graph_btn.configure(state="disabled")
-    send_ble_command('r')
+    if not was_active:
+        send_ble_command('r')
 
 
 def close_graph():
@@ -756,10 +758,12 @@ def close_graph():
 def open_ppg_graph():
     """Abre monitor cardiaco separado, compartilhando a coleta existente."""
     global is_ppg_plotting
+    was_active = is_plotting
     is_ppg_plotting = True
     ppg_window.deiconify()
     ppg_graph_btn.configure(state="disabled")
-    send_ble_command('r')
+    if not was_active:
+        send_ble_command('r')
 
 
 def close_ppg_graph():
