@@ -363,6 +363,7 @@ MAX_POINTS = 100
 plot_data_pressure = deque([0.0]*MAX_POINTS, maxlen=MAX_POINTS)
 plot_data_flow = deque([0.0]*MAX_POINTS, maxlen=MAX_POINTS)
 is_plotting = False
+is_ppg_plotting = False
 
 flow_multiplier = 5.0
 
@@ -734,21 +735,50 @@ def send_ble_command(cmd):
             log(f"[BLE] Erro: {exc}")
 
 def open_graph():
+    """Abre exclusivamente o painel respiratorio original."""
     global is_plotting
     is_plotting = True
     plot_window.deiconify()
     graph_btn.configure(state="disabled")
-    send_ble_command('r') # Pede leitura de dados
+    send_ble_command('r')
+
 
 def close_graph():
+    """Fechar pneumo nao interrompe monitor PPG se ele ainda estiver aberto."""
     global is_plotting
     is_plotting = False
     plot_window.withdraw()
     graph_btn.configure(state="normal")
-    send_ble_command('f') # Para a leitura de dados
+    if not is_ppg_plotting:
+        send_ble_command('f')
 
-graph_btn = ctk.CTkButton(tools_frame, text="Abrir Grafico", width=100, state="disabled", command=open_graph)
+
+def open_ppg_graph():
+    """Abre monitor cardiaco separado, compartilhando a coleta existente."""
+    global is_ppg_plotting
+    is_ppg_plotting = True
+    ppg_window.deiconify()
+    ppg_graph_btn.configure(state="disabled")
+    send_ble_command('r')
+
+
+def close_ppg_graph():
+    """Fechar PPG nao interrompe pneumo se o outro painel estiver aberto."""
+    global is_ppg_plotting
+    is_ppg_plotting = False
+    ppg_window.withdraw()
+    ppg_graph_btn.configure(state="normal")
+    if not is_plotting:
+        send_ble_command('f')
+
+
+graph_btn = ctk.CTkButton(tools_frame, text="Gráfico Pneumo", width=155,
+                          state="disabled", command=open_graph)
 graph_btn.pack(pady=2)
+
+ppg_graph_btn = ctk.CTkButton(tools_frame, text="Monitor Cardíaco / SpO₂",
+                              width=155, state="disabled", command=open_ppg_graph)
+ppg_graph_btn.pack(pady=2)
 
 calib_btn = ctk.CTkButton(tools_frame, text="Calibrar Sensor", width=100, state="disabled", command=lambda: send_ble_command('c'))
 calib_btn.pack(pady=2)
@@ -1155,8 +1185,8 @@ def log(msg):
 
 # --- POPUP DO GRAFICO ---
 plot_window = ctk.CTkToplevel(root)
-plot_window.title("PITACO 2.4 - Monitor de Fluxo e PPG")
-plot_window.geometry("960x790")
+plot_window.title("PITACO 2.4 - Pneumógrafo")
+plot_window.geometry("820x560")
 plot_window.protocol("WM_DELETE_WINDOW", close_graph)
 plot_window.withdraw() 
 
@@ -2137,6 +2167,7 @@ async def ble_bridge():
         root.after(0, lambda: calib_btn.configure(state="normal"))
         root.after(0, lambda: zero_btn.configure(state="normal"))
         root.after(0, lambda: graph_btn.configure(state="normal"))
+        root.after(0, lambda: ppg_graph_btn.configure(state="normal"))
 
         await client.start_notify(CHARACTERISTIC_UUID, notification_handler)
         ble_ppg_lines.reset()
@@ -2171,6 +2202,7 @@ async def ble_bridge():
         root.after(0, lambda: calib_btn.configure(state="disabled"))
         root.after(0, lambda: zero_btn.configure(state="disabled"))
         root.after(0, lambda: graph_btn.configure(state="disabled"))
+        root.after(0, lambda: ppg_graph_btn.configure(state="disabled"))
 
 def start_bridge():
     global running, ser, ser_oxi, ser_device, ble_loop, ble_loop_thread, is_sampling, oxi_sampling
@@ -2247,6 +2279,7 @@ def start_bridge():
                 calib_btn.configure(state="normal")
                 zero_btn.configure(state="normal")
                 graph_btn.configure(state="normal")
+                ppg_graph_btn.configure(state="normal")
                 threading.Thread(target=usb_read_device_loop, daemon=True).start()
                 if not (ser and ser.is_open):
                     # Teste sem Unity: solicitar identificacao e aquisicao ao ESP32.
@@ -2286,11 +2319,14 @@ def stop_bridge():
     calib_btn.configure(state="disabled")
     zero_btn.configure(state="disabled")
     graph_btn.configure(state="disabled")
+    ppg_graph_btn.configure(state="disabled")
     set_indicator(status_serial, False)
     set_indicator(status_ble, False)
 
     if is_plotting:
         close_graph()
+    if is_ppg_plotting:
+        close_ppg_graph()
 
     log("Desconectando...")
     if ppg_monitor.csv.active:
