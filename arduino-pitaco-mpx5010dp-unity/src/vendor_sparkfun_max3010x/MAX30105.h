@@ -100,6 +100,7 @@ class MAX30105 {
   
   //FIFO Reading
   uint16_t check(void); // Le apenas o que cabe no anel, em blocos I2C
+  uint8_t getSoftwareBufferCapacity(void); // Capacidade real calculada no driver compilado
    bool takeFIFOReadError(void); // Consome flag de transferencia incompleta
   uint8_t available(void); //Tells caller how many new samples are available (head - tail)
   void nextSample(void); //Advances the tail of the sense array
