@@ -1890,6 +1890,21 @@ line_bpm_exp, = ax_bpm.plot([], [], color="#fbbf24", linewidth=1.6,
 ax_bpm.legend(loc="upper right", facecolor="#2b2b2b",
               edgecolor="#555555", labelcolor="white", fontsize=8)
 
+# Leitura instantanea bem visivel, no canto do proprio grafico de FC.
+# Sao fontes diferentes: nunca promover estimativa Python a valor firmware.
+bpm_fw_corner = ax_bpm.text(
+    0.018, 0.96, "ESP32: -- BPM", transform=ax_bpm.transAxes,
+    va="top", ha="left", fontsize=12, fontweight="bold",
+    color="#a78bfa",
+    bbox=dict(facecolor="#202020", edgecolor="#555555",
+              boxstyle="round,pad=0.35", alpha=0.93))
+bpm_py_corner = ax_bpm.text(
+    0.018, 0.72, "Python EXP.: -- BPM", transform=ax_bpm.transAxes,
+    va="top", ha="left", fontsize=12, fontweight="bold",
+    color="#fbbf24",
+    bbox=dict(facecolor="#202020", edgecolor="#555555",
+              boxstyle="round,pad=0.35", alpha=0.93))
+
 ax_spo2.set_ylabel("SpO₂ EXP. (%)", color="white")
 ax_spo2.set_xlabel("Tempo do dispositivo (s)", color="white")
 ax_spo2.set_ylim(70, 101)
@@ -1989,8 +2004,16 @@ def update_ppg_plot(_frame):
 
     experimental = snap["experimental"]
     if experimental["enabled"]:
-        line_bpm_exp.set_data(*zip(*experimental["bpm_history"])) if experimental["bpm_history"] else line_bpm_exp.set_data([], [])
-        line_spo2_exp.set_data(*zip(*experimental["spo2_history"])) if experimental["spo2_history"] else line_spo2_exp.set_data([], [])
+        if experimental["bpm_history"]:
+            xs_py, ys_py = zip(*experimental["bpm_history"])
+            line_bpm_exp.set_data(xs_py, ys_py)
+        else:
+            line_bpm_exp.set_data([], [])
+        if experimental["spo2_history"]:
+            xs_spo2, ys_spo2 = zip(*experimental["spo2_history"])
+            line_spo2_exp.set_data(xs_spo2, ys_spo2)
+        else:
+            line_spo2_exp.set_data([], [])
         py_bpm = (f"{experimental['bpm']:.1f}"
                   if experimental["bpm"] is not None else "--")
         py_ratio = (f"{experimental['ratio']:.3f}"
@@ -2014,9 +2037,13 @@ def update_ppg_plot(_frame):
     contact = {True: "presente", False: "ausente"}.get(snap["contact"], "--")
     g1_state = {True: "PASS", False: "REPROVADO"}.get(snap["g1_effective"], "aguardando")
     bpm_text = f"{snap['bpm']:.1f}" if snap["bpm"] is not None else "--"
+    bpm_fw_corner.set_text(f"ESP32: {bpm_text} BPM")
+    bpm_py_corner.set_text(
+        f"Python EXP.: {py_bpm if experimental['enabled'] else '--'} BPM")
     ppg_state_label.configure(
         text=(f"PPG {snap['source'] or '--'} | Contato: {contact} | "
-              f"G1: {g1_state} (motivo {snap['reason']}) | BPM FW: {bpm_text}"))
+              f"G1: {g1_state} (motivo {snap['reason']}) | "
+              f"BPM FW: {bpm_text} | {snap['fw_bpm_status']}"))
     ppg_stats_label.configure(
         text=(f"Recebidas: {snap['samples']} | {snap['sample_rate']:.1f} Hz | "
               f"Perdas seq: {snap['missing']} | Duplicadas: {snap['duplicates']} | "
