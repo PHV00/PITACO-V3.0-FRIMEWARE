@@ -742,7 +742,7 @@ def open_graph():
     is_plotting = True
     plot_window.deiconify()
     graph_btn.configure(state="disabled")
-    if not was_active:
+    if not was_active and not is_sampling:
         send_ble_command('r')
 
 
@@ -763,7 +763,7 @@ def open_ppg_graph():
     is_ppg_plotting = True
     ppg_window.deiconify()
     ppg_graph_btn.configure(state="disabled")
-    if not was_active:
+    if not was_active and not is_sampling:
         send_ble_command('r')
 
 
