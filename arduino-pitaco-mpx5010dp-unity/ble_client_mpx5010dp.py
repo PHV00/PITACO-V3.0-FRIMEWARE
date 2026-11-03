@@ -1868,9 +1868,7 @@ ppg_canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
 show_pressure_var = ctk.BooleanVar(value=True)
 
-fig, (ax1, ax_ppg) = plt.subplots(2, 1, figsize=(8, 6), dpi=100,
-                                 gridspec_kw={"height_ratios": (1, 1.15)})
-fig.subplots_adjust(hspace=0.42, left=0.10, right=0.90, top=0.96, bottom=0.10)
+fig, ax1 = plt.subplots(figsize=(6, 4), dpi=100)
 fig.patch.set_facecolor('#2b2b2b') 
 ax1.set_facecolor('#2b2b2b')
 
@@ -1890,18 +1888,6 @@ ax2 = ax1.twinx()
 ax2.set_ylabel('Pressão (Pa)', color='#ffffff')
 ax2.tick_params(axis='y', colors='#ffffff')
 ax2.yaxis.set_visible(False)
-
-# RED/IR sao RAW (contagens do ADC) sem qualquer filtro aplicado pelo middleware.
-ax_ppg.set_facecolor("#2b2b2b")
-ax_ppg.set_ylabel("PPG RAW (contagens)", color="white")
-ax_ppg.set_xlabel("Tempo do dispositivo (s)", color="white")
-ax_ppg.tick_params(axis="x", colors="white")
-ax_ppg.tick_params(axis="y", colors="white")
-ax_ppg.grid(True, color="#555555", linestyle=":", alpha=0.8)
-line_red, = ax_ppg.plot([], [], color="#ef4444", linewidth=1.5, label="RED")
-line_ir, = ax_ppg.plot([], [], color="#38bdf8", linewidth=1.5, label="IR")
-ax_ppg.legend(loc="upper right", facecolor="#2b2b2b",
-              edgecolor="#555555", labelcolor="white", fontsize=9)
 
 canvas = FigureCanvasTkAgg(fig, master=plot_window)
 canvas_widget = canvas.get_tk_widget()
@@ -1927,45 +1913,65 @@ def update_plot(frame):
             ax2.set_ylim(flow_to_pressure(f_lower), flow_to_pressure(f_upper))
         else:
             ax2.yaxis.set_visible(False) 
-        # A GUI apenas desenha um snapshot. As threads BLE/USB registram
-        # no modelo e jamais chamam metodos Tk ou Matplotlib diretamente.
-        snap = ppg_monitor.snapshot()
-        history = snap["history"]
-        if history:
-            xs, red_values, ir_values = zip(*history)
-            line_red.set_data(xs, red_values)
-            line_ir.set_data(xs, ir_values)
-            xmax = xs[-1]
-            ax_ppg.set_xlim(xmax - 12.0, xmax + .25)
-            finite = [v for rec in history for v in rec[1:]
-                      if isinstance(v, (float, int)) and math.isfinite(v)]
-            if finite:
-                lo, hi = min(finite), max(finite)
-                pad = max(150.0, (hi - lo) * .12)
-                ax_ppg.set_ylim(max(0.0, lo - pad), hi + pad)
-        else:
-            line_red.set_data([], [])
-            line_ir.set_data([], [])
-        contact = {True: "presente", False: "ausente"}.get(snap["contact"], "--")
-        g1_state = {True: "PASS", False: "REPROVADO"}.get(snap["g1_effective"], "aguardando")
-        bpm_text = f"{snap['bpm']:.1f}" if snap["bpm"] is not None else "--"
-        ppg_state_label.configure(
-            text=(f"PPG {snap['source'] or '--'} | Contato: {contact} | "
-                  f"G1: {g1_state} (motivo {snap['reason']}) | BPM: {bpm_text}"))
-        ppg_stats_label.configure(
-            text=(f"Recebidas: {snap['samples']} | {snap['sample_rate']:.1f} Hz | "
-                  f"Perdas seq: {snap['missing']} | Duplicadas: {snap['duplicates']} | "
-                  f"JSON inválido: {snap['invalid_json']} | "
-                  f"Janelas G1: {snap['g1_windows']} "
-                  f"(PASS {snap['g1_passes']}, falha {snap['g1_failures']}) | "
-                  f"Pressão: {snap['pressure_messages']} | "
-                  f"CSV descartadas: {snap['csv_dropped']}"))
         canvas.draw()
-    return line_flow, line_red, line_ir,
+    return line_flow,
 
-# Redesenho ~7 Hz: aquisição continua ~25 Hz em outra thread.
-# Menor carga Tk/Matplotlib reduz a chance de criar gaps no proprio testador.
-ani = animation.FuncAnimation(fig, update_plot, interval=150, blit=False, cache_frame_data=False)
+# O painel pneumo continua com o grafico e processamento respiratorio original.
+ani = animation.FuncAnimation(fig, update_plot, interval=150, blit=False,
+                              cache_frame_data=False)
+
+
+def update_ppg_plot(_frame):
+    """Exibe sinais recebidos e BPM valido, sem manipular callbacks BLE."""
+    if not is_ppg_plotting:
+        return line_red, line_ir, line_bpm
+
+    snap = ppg_monitor.snapshot()
+    history = snap["history"]
+    if history:
+        xs, red_values, ir_values = zip(*history)
+        line_red.set_data(xs, red_values)
+        line_ir.set_data(xs, ir_values)
+        xmax = xs[-1]
+        ax_ppg.set_xlim(xmax - 12.0, xmax + .25)
+        finite = [v for rec in history for v in rec[1:]
+                  if isinstance(v, (float, int)) and math.isfinite(v)]
+        if finite:
+            lo, hi = min(finite), max(finite)
+            pad = max(150.0, (hi - lo) * .12)
+            ax_ppg.set_ylim(max(0.0, lo - pad), hi + pad)
+    else:
+        line_red.set_data([], [])
+        line_ir.set_data([], [])
+
+    bpm_history = snap["bpm_history"]
+    if bpm_history:
+        line_bpm.set_data([x for x, _ in bpm_history],
+                          [b for _, b in bpm_history])
+    else:
+        line_bpm.set_data([], [])
+
+    contact = {True: "presente", False: "ausente"}.get(snap["contact"], "--")
+    g1_state = {True: "PASS", False: "REPROVADO"}.get(snap["g1_effective"], "aguardando")
+    bpm_text = f"{snap['bpm']:.1f}" if snap["bpm"] is not None else "--"
+    ppg_state_label.configure(
+        text=(f"PPG {snap['source'] or '--'} | Contato: {contact} | "
+              f"G1: {g1_state} (motivo {snap['reason']}) | BPM: {bpm_text}"))
+    ppg_stats_label.configure(
+        text=(f"Recebidas: {snap['samples']} | {snap['sample_rate']:.1f} Hz | "
+              f"Perdas seq: {snap['missing']} | Duplicadas: {snap['duplicates']} | "
+              f"JSON inválido: {snap['invalid_json']} | "
+              f"Janelas G1: {snap['g1_windows']} "
+              f"(PASS {snap['g1_passes']}, falha {snap['g1_failures']}) | "
+              f"Pressão: {snap['pressure_messages']} | "
+              f"CSV descartadas: {snap['csv_dropped']}"))
+    ppg_canvas.draw()
+    return line_red, line_ir, line_bpm
+
+
+# Apenas redesenho ~7 Hz. Coleta BLE/USB ocorre em outras threads.
+ani_ppg = animation.FuncAnimation(ppg_fig, update_ppg_plot, interval=150,
+                                  blit=False, cache_frame_data=False)
 
 # --- LOGICA DE COMUNICACAO ---
 buffer = bytearray()
