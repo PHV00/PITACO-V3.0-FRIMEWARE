@@ -7,8 +7,8 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from pitaco24_experimental import ExperimentalPpgAnalyzer, estimate_experimental
-from pitaco24_monitor import PpgMonitor
+from pitaco_bridge.experimental import ExperimentalPpgAnalyzer, estimate_experimental
+from pitaco_bridge.monitor import PpgMonitor
 
 
 def synthetic(bpm=75.0, seconds=10, red_ac=600, ir_ac=1000, noise=10):

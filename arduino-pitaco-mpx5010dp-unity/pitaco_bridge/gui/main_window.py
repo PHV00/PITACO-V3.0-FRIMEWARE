@@ -13,6 +13,8 @@ import struct
 import json
 from ..protocol import parse_pitaco_line, BleJsonlBuffer
 from ..monitor import PpgMonitor
+from ..game_output import (GAME_OUTPUT_PRESSURE, GAME_OUTPUT_FLOW,
+                           GAME_OUTPUT_COMBO, build_game_frame)
 from ..configuration import get_config_path, DEFAULT_PROFILE_DATA, DEFAULT_CONFIG, load_config
 from ..ports import get_all_com_ports
 from .. import pneumo
@@ -129,7 +131,7 @@ def save_config():
         "scale_multiplier": pneumo.flow_multiplier,
         "scale_key": scale_opt_var.get() if 'scale_opt_var' in globals() else config_data.get("scale_key"),
         "game_port": port_var.get() if 'port_var' in globals() else config_data.get("game_port"),
-        "output_mode": output_mode_var.get() if 'output_mode_var' in globals() else config_data.get("output_mode", "Pressão relativa (Pa)"),
+        "output_mode": output_mode_choice,
         "device_port": device_port_var.get() if 'device_port_var' in globals() else config_data.get("device_port")
     }
     try:
@@ -294,8 +296,9 @@ is_ppg_plotting = False
 
 
 def output_for_unity(pressure_pa, estimated_flow):
-    selected = output_mode_var.get() if 'output_mode_var' in globals() else "Pressão relativa (Pa)"
-    return pressure_pa if selected == "Pressão relativa (Pa)" else estimated_flow
+    # Combo usa a mesma grandeza respiratoria da modalidade classica (Pa).
+    # O BPM viaja num campo separado no mesmo frame de saida do jogo.
+    return estimated_flow if output_mode_choice == GAME_OUTPUT_FLOW else pressure_pa
 
 
 
@@ -410,15 +413,25 @@ conn_mode_segmented = ctk.CTkSegmentedButton(
 )
 conn_mode_segmented.pack(fill="x")
 
-# Modo de saida compatível com firmware: Pa relativos por padrao.
+# Contrato de SAIDA para a Unity: independente do modo de ENTRADA USB/BLE.
+# Mantemos os dois formatos numericos antigos e adicionamos o combo etiquetado.
+output_mode_choice = config_data.get("output_mode", GAME_OUTPUT_PRESSURE)
+if output_mode_choice not in (GAME_OUTPUT_PRESSURE, GAME_OUTPUT_FLOW, GAME_OUTPUT_COMBO):
+    output_mode_choice = GAME_OUTPUT_PRESSURE
+
+def on_output_mode_change(choice):
+    global output_mode_choice
+    output_mode_choice = choice
+    save_config()
+
 output_frame = ctk.CTkFrame(root, fg_color="transparent")
 output_frame.pack(pady=(4, 0), padx=15, fill="x")
 ctk.CTkLabel(output_frame, text="Saída ao jogo:", anchor="w").pack(side="left", padx=(2, 6))
-output_mode_var = ctk.StringVar(value=config_data.get("output_mode", "Pressão relativa (Pa)"))
+output_mode_var = ctk.StringVar(value=output_mode_choice)
 output_menu = ctk.CTkOptionMenu(
     output_frame, variable=output_mode_var,
-    values=["Pressão relativa (Pa)", "Fluxo estimado (L/min)"],
-    command=lambda _choice: save_config(), width=185
+    values=[GAME_OUTPUT_PRESSURE, GAME_OUTPUT_FLOW, GAME_OUTPUT_COMBO],
+    command=on_output_mode_change, width=185
 )
 output_menu.pack(side="right")
 
@@ -1105,20 +1118,29 @@ def notification_handler(sender, data):
 
 def interpolation_loop():
     global last_value, target_value, last_update_time, running, ser, is_sampling
-    output_interval = 0.01 
+    output_interval = 0.01
+    last_ppg_snapshot_at = 0.0
+    ppg_snapshot = None
     while running:
-        if is_sampling and ser and ser.is_open: 
+        if is_sampling and ser and ser.is_open:
             now = time.time()
             elapsed = now - last_update_time
             fraction = min(elapsed / update_interval, 1.0)
             interpolated_val = last_value + (target_value - last_value) * fraction
-            
-            line = f"{interpolated_val:.2f}\r\n".encode('ascii')
+
+            mode = output_mode_choice
+            if mode == GAME_OUTPUT_COMBO and (
+                    ppg_snapshot is None or time.monotonic() - last_ppg_snapshot_at >= 0.1):
+                ppg_snapshot = ppg_monitor.snapshot()
+                last_ppg_snapshot_at = time.monotonic()
+            # Unity recebe uma unica COM (a do PITACO), com ou sem o combo.
+            # SpO2 nao calibrada NUNCA e enviada para o jogo ou para o agente.
+            line = build_game_frame(interpolated_val, mode, ppg_snapshot)
             try:
                 ser.write(line)
             except:
                 pass
-        
+
         time.sleep(output_interval)
 
 def serial_read_loop():
