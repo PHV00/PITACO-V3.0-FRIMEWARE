@@ -2372,8 +2372,6 @@ def stop_bridge():
     conn_mode_segmented.configure(state="normal")
     calib_btn.configure(state="disabled")
     zero_btn.configure(state="disabled")
-    graph_btn.configure(state="disabled")
-    ppg_graph_btn.configure(state="disabled")
     set_indicator(status_serial, False)
     set_indicator(status_ble, False)
 
@@ -2381,6 +2379,10 @@ def stop_bridge():
         close_graph()
     if is_ppg_plotting:
         close_ppg_graph()
+    # close_* habilita o botao de abertura; apos desconectar ambos precisam
+    # permanecer desabilitados, ate a proxima conexao BLE/USB.
+    graph_btn.configure(state="disabled")
+    ppg_graph_btn.configure(state="disabled")
 
     log("Desconectando...")
     if ppg_monitor.csv.active:
