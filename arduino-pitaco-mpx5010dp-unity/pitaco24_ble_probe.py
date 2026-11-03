@@ -109,6 +109,7 @@ async def run(seconds, csv_path):
             try:
                 await client.start_notify(BLE_PPG_BINARY_UUID, on_binary)
                 transport = BLE_PPG_BINARY_UUID
+                await client.write_gatt_char(PRESSURE_UUID, b"b", response=True)
                 print("PPG: BLE compacto v1 (20 bytes por notificacao)")
             except Exception as exc:
                 print("PPG binario indisponivel; fallback JSON:", exc)
