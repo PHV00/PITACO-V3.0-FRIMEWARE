@@ -47,6 +47,7 @@ const float ZERO_REFERENCE_PA = 100.0f; // Referencia provisoria para testar a U
 #define OTA_CONTROL_UUID "3bcdff28-47fc-4a87-9684-7672c49d9266"
 #define OTA_DATA_UUID "3bcdff29-47fc-4a87-9684-7672c49d9266"
 #define PPG_NOTIFY_UUID "3bcdff2a-47fc-4a87-9684-7672c49d9266"
+#define PPG_BINARY_NOTIFY_UUID "3bcdff2b-47fc-4a87-9684-7672c49d9266"
 
 // MAX30105: I2C ESP32-C3 PROVISORIO, conferir pinos fisicos.
 #define MAX30105_SDA 4
@@ -69,6 +70,9 @@ const unsigned long notifyInterval = 50;
 
 BLECharacteristic* pCharacteristic;
 BLECharacteristic* pPpgCharacteristic = nullptr;
+BLECharacteristic* pPpgBinaryCharacteristic = nullptr;
+BLE2902* pPpgJsonCccd = nullptr;
+BLE2902* pPpgBinaryCccd = nullptr;
 MAX30105 max30105;
 bool ppgReady = false;
 bool ppgSampling = false;
@@ -261,7 +265,14 @@ void setup() {
   pPpgCharacteristic = pService->createCharacteristic(
     PPG_NOTIFY_UUID,
     BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  pPpgCharacteristic->addDescriptor(new BLE2902());
+  pPpgJsonCccd = new BLE2902();
+  pPpgCharacteristic->addDescriptor(pPpgJsonCccd);
+  // Fast path PPG opt-in; JSON BLE existente permanece para clientes antigos.
+  pPpgBinaryCharacteristic = pService->createCharacteristic(
+    PPG_BINARY_NOTIFY_UUID,
+    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  pPpgBinaryCccd = new BLE2902();
+  pPpgBinaryCharacteristic->addDescriptor(pPpgBinaryCccd);
 
   pService->start();
 
@@ -536,7 +547,9 @@ void InitMAX30105() {
 // Envia JSONL em USB e fragmentos BLE de ate 20 bytes por notificacao.
 void SendPpgJson(const char* jsonLine) {
   Serial.print(jsonLine);
-  if (!deviceConnected || !pPpgCharacteristic) return;
+  // Sem cliente inscrito em JSON, evitar 8-12 chamadas notify por amostra.
+  if (!deviceConnected || !pPpgCharacteristic ||
+      !pPpgJsonCccd || !pPpgJsonCccd->getNotifications()) return;
   const size_t n = strlen(jsonLine);
   for (size_t off = 0; off < n; off += BLE_JSON_CHUNK_BYTES) {
     const size_t len = (n - off > BLE_JSON_CHUNK_BYTES)
@@ -547,6 +560,66 @@ void SendPpgJson(const char* jsonLine) {
 }
 
 // Publica o resultado periodico da janela G1, sem alterar RAW.
+// BLE PPG v1: frame 20 B (cabe em ATT MTU 23), CRC16 CCITT-FALSE.
+// Byte 0=A5, byte 1=tipo (01 amostra, 02 G1), bytes 18..19=CRC LE.
+static void blePut16(uint8_t* p, uint16_t n) { p[0]=(uint8_t)n; p[1]=(uint8_t)(n>>8); }
+static void blePut24(uint8_t* p, uint32_t n) {
+  p[0]=(uint8_t)n; p[1]=(uint8_t)(n>>8); p[2]=(uint8_t)(n>>16);
+}
+static void blePut32(uint8_t* p, uint32_t n) {
+  p[0]=(uint8_t)n; p[1]=(uint8_t)(n>>8);
+  p[2]=(uint8_t)(n>>16); p[3]=(uint8_t)(n>>24);
+}
+static uint16_t bleCrc16(const uint8_t* p, uint8_t size) {
+  uint16_t crc=0xFFFF;
+  for (uint8_t i=0; i<size; ++i) {
+    crc^=(uint16_t)p[i]<<8;
+    for (uint8_t b=0; b<8; ++b) {
+      crc=(crc&0x8000U) ? (uint16_t)((crc<<1)^0x1021U) : (uint16_t)(crc<<1);
+    }
+  }
+  return crc;
+}
+static bool blePpgSubscribed() {
+  return deviceConnected && pPpgBinaryCharacteristic &&
+         pPpgBinaryCccd && pPpgBinaryCccd->getNotifications();
+}
+static void blePpgNotify(uint8_t* p) {
+  blePut16(p+18,bleCrc16(p,18));
+  pPpgBinaryCharacteristic->setValue(p,20);
+  pPpgBinaryCharacteristic->notify();
+}
+// Sample: [2..3] seq; [4..7] t_ms; [8..10] RED; [11..13] IR;
+// [14..15] BPM*10 (FFFF=ausente); [16] bits valid/contact/ready/pass;
+// [17] reason. Pressao permanece na characteristic legada.
+static void sendBlePpgSample(uint16_t seq, uint32_t tMs, uint32_t red,
+                             uint32_t ir, bool bpmValid, float bpm,
+                             bool contact, bool g1ReadyNow,
+                             bool g1PassNow, uint8_t reason) {
+  if (!blePpgSubscribed()) return;
+  uint8_t p[20]={0};
+  p[0]=0xA5; p[1]=1;
+  blePut16(p+2,seq); blePut32(p+4,tMs);
+  blePut24(p+8,red); blePut24(p+11,ir);
+  blePut16(p+14,bpmValid ? (uint16_t)lroundf(bpm*10.0f) : 0xFFFFU);
+  p[16]=(bpmValid?1U:0U)|(contact?2U:0U)|
+        (g1ReadyNow?4U:0U)|(g1PassNow?8U:0U);
+  p[17]=reason;
+  blePpgNotify(p);
+}
+// G1: [2..3] janela; [4..7] t_ms; [8..9] samples; [10] reason;
+// [11] pass (0 ou 1); [12..17] reservados, inicialmente zero.
+static void sendBlePpgG1(uint16_t window, uint32_t tMs,
+                          uint16_t samples, uint8_t reason) {
+  if (!blePpgSubscribed()) return;
+  uint8_t p[20]={0};
+  p[0]=0xA5; p[1]=2;
+  blePut16(p+2,window); blePut32(p+4,tMs);
+  blePut16(p+8,samples);
+  p[10]=reason; p[11]=reason==0?1U:0U;
+  blePpgNotify(p);
+}
+
 void SendG1Json(uint8_t reason, uint16_t samples) {
   char line[160];
   snprintf(line, sizeof(line),
@@ -554,6 +627,7 @@ void SendG1Json(uint8_t reason, uint16_t samples) {
            millis(), (unsigned)g1Window, reason == 0 ? "true" : "false",
            (unsigned)reason, (unsigned)samples);
   SendPpgJson(line);
+  sendBlePpgG1(g1Window, millis(), samples, reason);
 }
 
 // Executa FIFO, contato, BPM experimental, RAW e Gate 01 sem bloquear MPX.
@@ -751,6 +825,9 @@ void PollMAX30105() {
         effectiveG1, (unsigned)effectiveReason,
         instantContact ? "true" : "false");
     if (written > 0 && written < (int)sizeof(line)) SendPpgJson(line);
+    sendBlePpgSample(ppgSeq, receiveMs, red, ir, bpmValid, heartBpm,
+                     instantContact, instantContact && g1Ready,
+                     instantContact && g1Ready && g1Passed, effectiveReason);
     max30105.nextSample();
     ++ppgDiagProcessed;
   }
