@@ -242,3 +242,35 @@ qualificado do firmware quando permitido, com SpO₂ indisponível.
   além de resultados com diferentes posições, pressão de contato e
   iluminação. Para SpO₂, comparação com oxímetro comercial é apenas
   exploratória, não substitui calibração clínica contra saturação arterial.
+
+## Interpretação dos três gráficos e leitura instantânea (2026-11-02)
+
+O painel **Monitor Cardíaco / SpO₂** tem três gráficos de cima para baixo:
+
+1. **PPG RAW (RED e IR):** contagens brutas dos dois LEDs. Ondulações
+   repetidas são candidatas a pulso; não representam, por si, BPM validado.
+2. **BPM (gráfico central):** curva roxa = BPM aceito do firmware ESP32
+   (função SparkFun `checkForBeat`, `bpm_valid=true`); curva amarela =
+   BPM **experimental** por autocorrelação do IR calculada no Python
+   (somente com a checkbox ligada). Valores do eixo vertical são escala,
+   não medição atual. **No canto superior esquerdo**, os dois números
+   aparecem em destaque como `ESP32: xx.x BPM` e
+   `Python EXP.: xx.x BPM`; quando não existem, mostram `--`.
+3. **SpO₂ EXP.:** estimativa ilustrativa não calibrada. Exibida como
+   indisponível (`--`) quando faltam critérios de sinal.
+
+**Por que pode ficar `--` mesmo com G1 PASS?** O G1 verifica integridade
+básica de janela e contato, **não** comprova batimentos detectáveis.
+O firmware só emite BPM após detecções plausíveis de `checkForBeat`,
+janela G1 válida e batimento recente. O modo Python fica desligado por
+padrão; quando ligado, exige G1+contato e cerca de 8 s adicionais de
+dados contínuos, e pode rejeitar baixa AC, irregularidade ou movimento.
+A linha superior agora indica o motivo do firmware:
+`Aguardando G1`, `G1 reprovado`, `Sem contato`,
+`Firmware ainda sem BPM valido`, `BPM firmware valido` ou
+`Sem amostras recentes`. A linha experimental exibe seu próprio motivo.
+
+O **índice R** é a variável intermediária do cálculo de SpO₂
+(`(AC_RED/DC_RED)/(AC_IR/DC_IR)`), e não a ordenada do gráfico central.
+Ele é mostrado junto do estado experimental quando disponível.
+Nenhum valor experimental é transmitido à Unity.
