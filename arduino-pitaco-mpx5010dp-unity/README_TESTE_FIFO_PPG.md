@@ -234,3 +234,72 @@ sob movimento e acuracia BPM permanecem pendentes.
 BPM e SpO2 nao sao clinicamente validados; SpO2 segue indisponivel.
 
 Referencia de software: https://github.com/sparkfun/SparkFun_MAX3010x_Sensor_Library
+
+## Diagnostico do buffer de software — PR #7 (03/11/2026)
+
+**Escopo:** instrumento de bancada na branch `fix/ppg-sparkfun-buffer64-safe-fifo`.
+O codigo versionado nessa branch usa buffer de software de 64 slots (63
+utilizaveis) em vez dos 4 slots da versao original da SparkFun. Isso nao
+amplia a FIFO fisica de 32 registros do MAX30102/MAX30105.
+
+### Origem e efeito da sobrescrita
+
+- O sensor produz pares RED/IR na FIFO fisica. A biblioteca os copia para
+  um anel de RAM e o orquestrador consome cada par com `nextSample()`.
+- Se `head` avanca e alcanca dados ainda nao consumidos por `tail`,
+  amostras antigas podem ser sobrescritas. O `check()` modificado limita
+  a leitura aos slots livres; nao deve sobrescrever dados por desenho.
+- `PPG_SW_RING_OVERRUN` e um **diagnostico de inconsistencia**
+  (`novas > disponiveis`), nao a prova isolada de qual componente
+  causou a perda. `ovf=0` monitora a FIFO fisica, nao o anel de RAM.
+- Os canais RED e IR compartilham o indice do registro no anel;
+  uma sobrescrita normal afeta o par. `RED_LOW` (reason=2) nao indica
+  sobrescrita exclusivamente em RED: o limiar pode falhar primeiro no
+  canal com intensidade menor.
+- Timestamp `t_ms` do JSON e obtido quando o lote e processado, nao no
+  instante de conversao do ADC. Lotes podem concentrar timestamps e
+  distorcer o intervalo de batimentos calculado por `millis()`.
+
+### Instrumentacao (sem mudanca nos algoritmos)
+
+- `MAX30105.h`: declara `getSoftwareBufferCapacity()`.
+- `MAX30105.cpp`: calcula a capacidade usando `sizeof(sense.red)`,
+  dentro da implementacao do driver que foi efetivamente compilada.
+  Se uma outra implementacao sem esse simbolo for vinculada, a etapa
+  de link deve falhar, ajudando a encontrar conflitos de bibliotecas.
+- Sketch principal: apos `clearFIFO()`, no inicio de cada sessao, envia:
+
+```text
+X,PPG_DRIVER,impl=vendor_safe_fifo,sw_slots=64,sw_usable=63
+```
+
+- Caso ocorra inconsistencia, `PPG_SW_RING_OVERRUN` tambem registra
+  `sw_slots`. Nao ha mudanca nos comandos, BLE, JSONL, G1, BPM ou
+  processamento respiratorio.
+
+### Procedimento de bancada ainda pendente
+
+1. Conferir `git status --short`, preservar alteracoes locais e
+   atualizar a branch `fix/ppg-sparkfun-buffer64-safe-fifo`.
+2. Habilitar saida detalhada de compilacao no Arduino IDE, compilar e
+   carregar o firmware novo no ESP32-C3. Confirmar que o sketch usa
+   `src/vendor_sparkfun_max3010x/MAX30105.cpp`. Nao misturar binario
+   anterior com o codigo atualizado.
+3. Iniciar sessao `r`; buscar `X,PPG_DRIVER` e confirmar 64/63.
+   Se a compilacao indicar referencia indefinida a
+   `getSoftwareBufferCapacity`, procurar colisao/mistura de drivers;
+   nao mascarar o erro retirando o diagnostico.
+4. Coletar 60 segundos por USB com:
+   `python .\\pitaco24_ppg_probe.py COM3 --seconds 60 --csv ppg_driver_diag_60s.csv`.
+   Observar `ovf`, `PPG_SW_RING_OVERRUN`, `novas/processadas`,
+   G1 e saltos de sequencia.
+5. Repetir com BLE e graficos em uso, sem mudar o BPM para isolar
+   possivel efeito de carga. Nao declarar ausencia de perdas apenas
+   porque a sequencia transmitida nao possui saltos.
+
+**Interpretacao:** `sw_slots=64` confirma a capacidade no driver
+linkado com este metodo, mas nao exclui corrupcao de memoria, erro de
+transporte I2C, falha de FIFO fisica nem uso de uma versao de firmware
+anterior no dispositivo. Se o overrun reaparecer com 64 slots, investigar
+estado dos ponteiros e integridade de memoria antes de aumentar ainda
+mais o buffer. **Sem compilacao/upload e teste real nesta alteracao.**
