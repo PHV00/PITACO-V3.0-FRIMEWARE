@@ -15,6 +15,7 @@ import time
 import struct
 import json
 from pitaco24_protocol import parse_pitaco_line, BleJsonlBuffer
+from pitaco24_monitor import PpgMonitor
 import tempfile
 import urllib.request
 import urllib.error
@@ -337,6 +338,7 @@ ser_device = None
 oxi_sampling = False
 last_oxi_sent = 0.0
 ble_ppg_lines = BleJsonlBuffer()
+ppg_monitor = PpgMonitor(max_points=300)
 ble_loop = None
 ble_loop_thread = None
 
@@ -1153,8 +1155,8 @@ def log(msg):
 
 # --- POPUP DO GRAFICO ---
 plot_window = ctk.CTkToplevel(root)
-plot_window.title("Monitor de Fluxo")
-plot_window.geometry("820x560")
+plot_window.title("PITACO 2.4 - Monitor de Fluxo e PPG")
+plot_window.geometry("960x790")
 plot_window.protocol("WM_DELETE_WINDOW", close_graph)
 plot_window.withdraw() 
 
@@ -1746,9 +1748,57 @@ info_btn = ctk.CTkButton(
 )
 info_btn.pack(side="right", padx=(0, 5))
 
+# Painel adicional: somente a observacao dos dados recebidos por USB/BLE.
+# NAO modifica a via antiga de pressao/fluxo nem os calculos do Gate 01.
+ppg_info_frame = ctk.CTkFrame(popup_header_frame, fg_color="transparent")
+ppg_info_frame.pack(fill="x", padx=8, pady=(0, 8))
+ppg_state_label = ctk.CTkLabel(
+    ppg_info_frame, text="PPG: sem dados | Contato: -- | G1: -- | BPM: --",
+    font=("Segoe UI", 12, "bold"), text_color="#e2e8f0", anchor="w")
+ppg_state_label.pack(fill="x")
+ppg_stats_label = ctk.CTkLabel(
+    ppg_info_frame, text="Recebidas: 0 | 0 Hz | Perdas: 0 | Duplicadas: 0 | JSON invalido: 0",
+    font=("Segoe UI", 11), text_color="#9ca3af", anchor="w")
+ppg_stats_label.pack(fill="x")
+
+
+def toggle_ppg_csv():
+    """Opcional: registrar RAW completo, inclusive janelas reprovadas."""
+    if ppg_monitor.csv.active:
+        try:
+            ppg_monitor.csv.stop()
+            ppg_csv_btn.configure(text="Gravar CSV PPG")
+            snap = ppg_monitor.snapshot()
+            log(f"CSV PPG finalizado: {snap['csv_written']} linhas; "
+                f"descartadas pelo gravador: {snap['csv_dropped']}.")
+        except Exception as exc:
+            log(f"Falha ao finalizar CSV PPG: {exc}")
+        return
+    initial = "pitaco24_ppg_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"
+    target = filedialog.asksaveasfilename(
+        parent=plot_window, title="Gravar dados brutos PPG/G1/pressao",
+        initialfile=initial, defaultextension=".csv",
+        filetypes=[("Dados CSV", "*.csv")])
+    if not target:
+        return
+    try:
+        ppg_monitor.csv.start(target)
+        ppg_csv_btn.configure(text="Encerrar CSV PPG")
+        log("Gravacao CSV PPG iniciada: " + target)
+    except Exception as exc:
+        log(f"Falha ao abrir gravacao CSV: {exc}")
+
+
+ppg_csv_btn = ctk.CTkButton(
+    ppg_info_frame, text="Gravar CSV PPG", width=135, height=26,
+    command=toggle_ppg_csv)
+ppg_csv_btn.pack(anchor="e", pady=(2, 0))
+
 show_pressure_var = ctk.BooleanVar(value=True)
 
-fig, ax1 = plt.subplots(figsize=(6, 4), dpi=100)
+fig, (ax1, ax_ppg) = plt.subplots(2, 1, figsize=(8, 6), dpi=100,
+                                 gridspec_kw={"height_ratios": (1, 1.15)})
+fig.subplots_adjust(hspace=0.42, left=0.10, right=0.90, top=0.96, bottom=0.10)
 fig.patch.set_facecolor('#2b2b2b') 
 ax1.set_facecolor('#2b2b2b')
 
@@ -1767,7 +1817,19 @@ hline_min = ax1.axhline(y=persistent_min_flow, color='#17a2b8', linestyle='--', 
 ax2 = ax1.twinx()
 ax2.set_ylabel('Pressão (Pa)', color='#ffffff')
 ax2.tick_params(axis='y', colors='#ffffff')
-ax2.yaxis.set_visible(False) 
+ax2.yaxis.set_visible(False)
+
+# RED/IR sao RAW (contagens do ADC) sem qualquer filtro aplicado pelo middleware.
+ax_ppg.set_facecolor("#2b2b2b")
+ax_ppg.set_ylabel("PPG RAW (contagens)", color="white")
+ax_ppg.set_xlabel("Tempo do dispositivo (s)", color="white")
+ax_ppg.tick_params(axis="x", colors="white")
+ax_ppg.tick_params(axis="y", colors="white")
+ax_ppg.grid(True, color="#555555", linestyle=":", alpha=0.8)
+line_red, = ax_ppg.plot([], [], color="#ef4444", linewidth=1.5, label="RED")
+line_ir, = ax_ppg.plot([], [], color="#38bdf8", linewidth=1.5, label="IR")
+ax_ppg.legend(loc="upper right", facecolor="#2b2b2b",
+              edgecolor="#555555", labelcolor="white", fontsize=9)
 
 canvas = FigureCanvasTkAgg(fig, master=plot_window)
 canvas_widget = canvas.get_tk_widget()
@@ -1793,8 +1855,41 @@ def update_plot(frame):
             ax2.set_ylim(flow_to_pressure(f_lower), flow_to_pressure(f_upper))
         else:
             ax2.yaxis.set_visible(False) 
+        # A GUI apenas desenha um snapshot. As threads BLE/USB registram
+        # no modelo e jamais chamam metodos Tk ou Matplotlib diretamente.
+        snap = ppg_monitor.snapshot()
+        history = snap["history"]
+        if history:
+            xs, red_values, ir_values = zip(*history)
+            line_red.set_data(xs, red_values)
+            line_ir.set_data(xs, ir_values)
+            xmax = xs[-1]
+            ax_ppg.set_xlim(xmax - 12.0, xmax + .25)
+            finite = [v for rec in history for v in rec[1:]
+                      if isinstance(v, (float, int)) and math.isfinite(v)]
+            if finite:
+                lo, hi = min(finite), max(finite)
+                pad = max(150.0, (hi - lo) * .12)
+                ax_ppg.set_ylim(max(0.0, lo - pad), hi + pad)
+        else:
+            line_red.set_data([], [])
+            line_ir.set_data([], [])
+        contact = {True: "presente", False: "ausente"}.get(snap["contact"], "--")
+        g1_state = {True: "PASS", False: "REPROVADO"}.get(snap["g1_effective"], "aguardando")
+        bpm_text = f"{snap['bpm']:.1f}" if snap["bpm"] is not None else "--"
+        ppg_state_label.configure(
+            text=(f"PPG {snap['source'] or '--'} | Contato: {contact} | "
+                  f"G1: {g1_state} (motivo {snap['reason']}) | BPM: {bpm_text}"))
+        ppg_stats_label.configure(
+            text=(f"Recebidas: {snap['samples']} | {snap['sample_rate']:.1f} Hz | "
+                  f"Perdas seq: {snap['missing']} | Duplicadas: {snap['duplicates']} | "
+                  f"JSON inválido: {snap['invalid_json']} | "
+                  f"Janelas G1: {snap['g1_windows']} "
+                  f"(PASS {snap['g1_passes']}, falha {snap['g1_failures']}) | "
+                  f"Pressão: {snap['pressure_messages']} | "
+                  f"CSV descartadas: {snap['csv_dropped']}"))
         canvas.draw()
-    return line_flow,
+    return line_flow, line_red, line_ir,
 
 ani = animation.FuncAnimation(fig, update_plot, interval=50, blit=False, cache_frame_data=False)
 
@@ -1813,13 +1908,14 @@ def update_pressure_from_device(val_pa):
     last_update_time = time.time()
 
 
-def process_pitaco_line(line_str, allow_pressure=True):
-    """Aceita linha de pressao original ou JSON PITACO 2.4."""
+def process_pitaco_line(line_str, allow_pressure=True, source="USB"):
+    """Aceita pressao original/JSON 2.4 e registra PPG para o monitor."""
     global last_oxi_sent
     msg = parse_pitaco_line(line_str)
     if msg is None:
         return False
     kind = msg.get("type")
+    ppg_monitor.observe(msg, source=source)
     if kind == "pressure":
         if allow_pressure:
             update_pressure_from_device(msg["mpx5010dp"]["pressure_pa"])
@@ -1857,11 +1953,15 @@ def process_pitaco_line(line_str, allow_pressure=True):
 
 
 def ppg_notification_handler(sender, data):
-    # Cada notify pode conter apenas fragmentos de uma linha JSON.
+    # Uma notificacao pode ter apenas fragmentos do mesmo JSON; mede frames
+    # completos e erros SEM inventar amostras que nao chegaram.
+    ppg_monitor.note_ble_fragment()
     for line_str in ble_ppg_lines.feed(bytes(data)):
         try:
-            process_pitaco_line(line_str, allow_pressure=False)
+            if not process_pitaco_line(line_str, allow_pressure=False, source="BLE"):
+                ppg_monitor.note_invalid_json()
         except Exception as exc:
+            ppg_monitor.note_invalid_json()
             log(f"Erro ao interpretar JSON PPG BLE: {exc}")
 
 
@@ -1908,7 +2008,7 @@ def notification_handler(sender, data):
                 else:
                     # Se não for echo, trata como número de pressão (Pa)
                     try:
-                        process_pitaco_line(line_str, allow_pressure=True)
+                        process_pitaco_line(line_str, allow_pressure=True, source="BLE")
                     except ValueError:
                         pass
                     
@@ -1996,7 +2096,7 @@ def usb_read_device_loop():
                                 ser.write(b"echop\r\n")
                         else:
                             try:
-                                process_pitaco_line(line_str, allow_pressure=True)
+                                process_pitaco_line(line_str, allow_pressure=True, source="USB")
                             except ValueError:
                                 pass
                         usb_buffer.clear()
@@ -2074,6 +2174,7 @@ def start_bridge():
     global running, ser, ser_oxi, ser_device, ble_loop, ble_loop_thread, is_sampling, oxi_sampling
 
     if running: return
+    ppg_monitor.reset()  # nao misturar sessoes USB, BLE ou reconexoes
     
     mode = conn_mode_var.get()
     game_port = port_var.get()
@@ -2190,6 +2291,14 @@ def stop_bridge():
         close_graph()
 
     log("Desconectando...")
+    if ppg_monitor.csv.active:
+        try:
+            ppg_monitor.csv.stop()
+            ppg_csv_btn.configure(text="Gravar CSV PPG")
+            log(f"CSV PPG salvo: {ppg_monitor.csv.written} linhas; "
+                f"descartadas {ppg_monitor.csv.dropped}.")
+        except Exception as exc:
+            log(f"Falha ao encerrar CSV PPG: {exc}")
     # Encerra aquisicao no modo Cabo USB, inclusive monitor sem Unity.
     if ser_device and ser_device.is_open:
         try:
