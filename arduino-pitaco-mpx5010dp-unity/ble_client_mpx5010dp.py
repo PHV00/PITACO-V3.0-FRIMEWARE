@@ -2106,6 +2106,7 @@ async def ble_bridge():
             # Preferir 1 frame/notify, sem depender de negociacao de MTU.
             await client.start_notify(BLE_PPG_BINARY_UUID, ppg_binary_notification_handler)
             ppg_transport = BLE_PPG_BINARY_UUID
+            await client.write_gatt_char(CHARACTERISTIC_UUID, b"b", response=True)
             log("Canal PPG BLE compacto v1 (20 B/notificacao) ativo.")
         except Exception as binary_error:
             # Firmware antigo ainda funciona com JSONL fracionado.
