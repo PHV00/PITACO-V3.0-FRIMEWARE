@@ -160,6 +160,7 @@ class PpgMonitor:
             self.g1_effective = None
             self.reason = None
             self.bpm = None
+            self.fw_bpm_status = "Aguardando leitura PPG"
 
     def set_experimental_enabled(self, enabled):
         """Chave do testador PC; nao altera firmware, RAW ou Unity."""
@@ -246,6 +247,17 @@ class PpgMonitor:
                     else None
                 )
                 self.bpm = accepted_bpm
+                if self.contact is False:
+                    self.fw_bpm_status = "Sem contato"
+                elif sqi.get("g1") is not True:
+                    self.fw_bpm_status = ("G1 reprovado" if sqi.get("g1") is False
+                                          else "Aguardando G1")
+                elif ppg.get("bpm_valid") is not True:
+                    self.fw_bpm_status = "Firmware ainda sem BPM valido"
+                elif accepted_bpm is None:
+                    self.fw_bpm_status = "BPM recebido fora de 35-200"
+                else:
+                    self.fw_bpm_status = "BPM firmware valido"
                 self.bpm_history.append((sample_t, accepted_bpm))
                 self.experimental.observe(msg, gap=sequence_gap)
         self.csv.record(msg, source, now)
@@ -273,9 +285,13 @@ class PpgMonitor:
                 "g1_samples": self.g1_samples, "g1_window": self.g1_window,
                 "contact": self.contact, "g1_effective": self.g1_effective,
                 "reason": self.reason, "bpm": self.bpm,
+                "fw_bpm_status": self.fw_bpm_status,
                 "source": self.source,
                 "experimental": self.experimental.snapshot()
             }
+        if sample_age is None or sample_age >= 2.0:
+            out["bpm"] = None
+            out["fw_bpm_status"] = "Sem amostras recentes"
         # Telemetria interrompida nao pode manter valores experimentais atuais.
         # Historicos ficam disponiveis para diagnostico (nenhum RAW apagado).
         if out["experimental"]["enabled"] and (
