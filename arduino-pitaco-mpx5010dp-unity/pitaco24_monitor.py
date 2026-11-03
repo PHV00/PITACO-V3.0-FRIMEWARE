@@ -10,6 +10,8 @@ import threading
 import time
 from collections import deque
 
+from pitaco24_experimental import ExperimentalPpgAnalyzer
+
 
 CSV_FIELDS = (
     "type", "transport", "rx_s", "seq", "window", "t_ms", "red", "ir",
@@ -127,6 +129,7 @@ class PpgMonitor:
         self.bpm_history = deque(maxlen=max_points)
         self.recent_rx = deque(maxlen=400)
         self.csv = PpgCsvRecorder()
+        self.experimental = ExperimentalPpgAnalyzer()
         self.reset()
 
     def reset(self):
@@ -134,6 +137,7 @@ class PpgMonitor:
             self.history.clear()
             self.bpm_history.clear()
             self.recent_rx.clear()
+            self.experimental.reset()
             self.first_rx = None
             self.last_rx = None
             self.last_seq = None
@@ -156,6 +160,11 @@ class PpgMonitor:
             self.g1_effective = None
             self.reason = None
             self.bpm = None
+
+    def set_experimental_enabled(self, enabled):
+        """Chave do testador PC; nao altera firmware, RAW ou Unity."""
+        with self._lock:
+            self.experimental.set_enabled(enabled)
 
     def note_ble_fragment(self):
         with self._lock:
@@ -190,8 +199,10 @@ class PpgMonitor:
                 t_ms = msg.get("t_ms")
                 ppg = msg["ppg"]
                 sqi = msg.get("sqi") or {}
+                sequence_gap = False
                 if self.last_seq is not None:
                     delta = (seq - self.last_seq) & 0xFFFF
+                    sequence_gap = delta != 1
                     if delta == 0:
                         self.duplicates += 1
                     elif 0 < delta < 32768:
@@ -236,6 +247,7 @@ class PpgMonitor:
                 )
                 self.bpm = accepted_bpm
                 self.bpm_history.append((sample_t, accepted_bpm))
+                self.experimental.observe(msg, gap=sequence_gap)
         self.csv.record(msg, source, now)
 
     def snapshot(self, now=None):
@@ -261,7 +273,8 @@ class PpgMonitor:
                 "g1_samples": self.g1_samples, "g1_window": self.g1_window,
                 "contact": self.contact, "g1_effective": self.g1_effective,
                 "reason": self.reason, "bpm": self.bpm,
-                "source": self.source
+                "source": self.source,
+                "experimental": self.experimental.snapshot()
             }
         out["csv_active"] = self.csv.active
         out["csv_written"] = self.csv.written
