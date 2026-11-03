@@ -5,17 +5,18 @@ import subprocess
 from tkinter import messagebox, Menu, filedialog
 import customtkinter as ctk
 import serial
-import serial.tools.list_ports
-import wmi
-import pythoncom
 import threading
 import ctypes
 import asyncio
 import time
 import struct
 import json
+from .protocol import parse_pitaco_line, BleJsonlBuffer
 from .monitor import PpgMonitor
-from .transport import PitacoMessageRouter
+from .configuration import get_config_path, DEFAULT_PROFILE_DATA, DEFAULT_CONFIG, load_config
+from .ports import get_all_com_ports
+from . import pneumo
+from .pneumo import parse_pressure_pa, calculate_flow, flow_to_pressure, PressureFilter
 import tempfile
 import urllib.request
 import urllib.error
@@ -33,67 +34,6 @@ if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
 import datetime
 import math
 
-def get_config_path():
-    appdata = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-    config_dir = os.path.join(appdata, "PITACO_Bridge")
-    try:
-        os.makedirs(config_dir, exist_ok=True)
-        return os.path.join(config_dir, "config_mpx5010dp.json")
-    except:
-        return "config_mpx5010dp.json"
-
-DEFAULT_PROFILE_DATA = {
-    "max_flow": 100.0,
-    "min_flow": -100.0,
-    "resp_rate": 0.0,
-    "t_ins": 0.0,
-    "t_exp": 0.0,
-    "ie_ratio": "1:2.0",
-    "last_updated": "Nunca"
-}
-
-DEFAULT_CONFIG = {
-    "active_profile": "Padrão",
-    "profiles": {
-        "Padrão": DEFAULT_PROFILE_DATA.copy()
-    },
-    "com0com_installed": False,
-    "conn_mode": "Cabo USB",
-    "output_mode": "Pressão relativa (Pa)",
-    "filter_mode": "Moderado",
-    "scale_multiplier": 5.0,
-    "scale_key": "5.0x",
-    "game_port": "Somente monitor",
-    "oximeter_game_port": "Somente monitor",
-    "device_port": ""
-}
-
-def load_config():
-    p = get_config_path()
-    if os.path.exists(p):
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                cfg = DEFAULT_CONFIG.copy()
-                cfg.update(data)
-
-                # Garante estrutura de profiles
-                if "profiles" not in cfg or not isinstance(cfg["profiles"], dict) or not cfg["profiles"]:
-                    cfg["profiles"] = {"Padrão": DEFAULT_PROFILE_DATA.copy()}
-
-                for prof_name, prof_dict in list(cfg["profiles"].items()):
-                    merged_prof = DEFAULT_PROFILE_DATA.copy()
-                    if isinstance(prof_dict, dict):
-                        merged_prof.update(prof_dict)
-                    cfg["profiles"][prof_name] = merged_prof
-
-                if cfg.get("active_profile") not in cfg["profiles"]:
-                    cfg["active_profile"] = list(cfg["profiles"].keys())[0]
-
-                return cfg
-        except Exception as e:
-            print(f"Erro ao carregar config.json: {e}")
-    return DEFAULT_CONFIG.copy()
 
 config_data = load_config()
 active_profile_name = config_data.get("active_profile", "Padrão")
@@ -186,7 +126,7 @@ def save_config():
         "com0com_installed": config_data.get("com0com_installed", False),
         "conn_mode": conn_mode_var.get() if 'conn_mode_var' in globals() else config_data.get("conn_mode"),
         "filter_mode": pressure_filter.mode if 'pressure_filter' in globals() else config_data.get("filter_mode"),
-        "scale_multiplier": flow_multiplier if 'flow_multiplier' in globals() else config_data.get("scale_multiplier"),
+        "scale_multiplier": pneumo.flow_multiplier,
         "scale_key": scale_opt_var.get() if 'scale_opt_var' in globals() else config_data.get("scale_key"),
         "game_port": port_var.get() if 'port_var' in globals() else config_data.get("game_port"),
         "oximeter_game_port": oxi_port_var.get() if 'oxi_port_var' in globals() else config_data.get("oximeter_game_port", "Somente monitor"),
@@ -337,6 +277,8 @@ ser = None
 ser_oxi = None
 ser_device = None
 oxi_sampling = False
+last_oxi_sent = 0.0
+ble_ppg_lines = BleJsonlBuffer()
 ppg_monitor = PpgMonitor(max_points=300)
 ble_loop = None
 ble_loop_thread = None
@@ -346,17 +288,6 @@ target_value = 0.0
 last_update_time = time.time()
 update_interval = 0.050 # 50ms
 
-# Constantes para o cálculo de fluxo (Modelo Físico de Placa de Orifício / Bernoulli)
-PITACO_RADIUS = 0.018                      # Raio do tubo principal (m) = 18mm
-PITACO_ORIFICE_RADIUS = PITACO_RADIUS / 2.0 # Raio do orifício de restrição (m) = 9mm
-AIR_DENSITY = 1.204                         # Densidade do ar a 20°C (kg/m³)
-DISCHARGE_COEF = 0.62                      # Coeficiente de descarga do orifício padrão (Cd)
-
-# Área da seção do orifício (m²)
-ORIFICE_AREA = 3.1415926535 * (PITACO_ORIFICE_RADIUS ** 2)
-
-# Fator base físico: Q = Cd * A * sqrt(2 * ΔP / ρ) convertido para L/min (x 60.000)
-BASE_ORIFICE_FACTOR = DISCHARGE_COEF * ORIFICE_AREA * math.sqrt(2.0 / AIR_DENSITY) * 60000.0
 
 MAX_POINTS = 100
 plot_data_pressure = deque([0.0]*MAX_POINTS, maxlen=MAX_POINTS)
@@ -364,115 +295,14 @@ plot_data_flow = deque([0.0]*MAX_POINTS, maxlen=MAX_POINTS)
 is_plotting = False
 is_ppg_plotting = False
 
-flow_multiplier = 5.0
 
-# Firmware MPX5010DP faz ADC -> Volts -> Pa. NAO recalcular a tensao aqui.
-# Fluxo L/min abaixo e estimado por modelo de orificio, NAO validado.
-def parse_pressure_pa(text):
-    value = float(text)
-    if not math.isfinite(value):
-        raise ValueError("Leitura de pressao nao finita")
-    return value
 
 def output_for_unity(pressure_pa, estimated_flow):
     selected = output_mode_var.get() if 'output_mode_var' in globals() else "Pressão relativa (Pa)"
     return pressure_pa if selected == "Pressão relativa (Pa)" else estimated_flow
 
-def calculate_flow(pressure_pa):
-    if abs(pressure_pa) < 1e-4:
-        return 0.0
-    sign = 1.0 if pressure_pa >= 0 else -1.0
-    abs_pa = abs(pressure_pa)
-    # Modelo quadrático do orifício: Q ∝ sqrt(ΔP)
-    flow_lmin = sign * BASE_ORIFICE_FACTOR * math.sqrt(abs_pa) * (flow_multiplier / 5.0)
-    return flow_lmin
 
-def flow_to_pressure(flow_lmin):
-    if abs(flow_lmin) < 1e-4:
-        return 0.0
-    effective_factor = BASE_ORIFICE_FACTOR * (flow_multiplier / 5.0)
-    if effective_factor == 0:
-        return 0.0
-    sign = 1.0 if flow_lmin >= 0 else -1.0
-    abs_flow = abs(flow_lmin)
-    return sign * ((abs_flow / effective_factor) ** 2)
 
-def get_all_com_ports():
-    ports = set()
-    for port in serial.tools.list_ports.comports():
-        ports.add(port.device)
-    try:
-        pythoncom.CoInitialize()
-        w = wmi.WMI()
-        for sp in w.query("SELECT * FROM Win32_SerialPort"):
-            if sp.DeviceID and sp.DeviceID not in ports:
-                ports.add(sp.DeviceID)
-    except Exception as e:
-        print(f"WMI error: {e}")
-    finally:
-        pythoncom.CoUninitialize()
-    return sorted(list(ports))
-
-# --- CLASSE DE FILTRAGEM DE PICOS DE PRESSÃO E FLUXO ---
-class PressureFilter:
-    def __init__(self, mode="Moderado"):
-        self.mode = mode
-        self.median_buffer = deque(maxlen=5)
-        self.ema_value = 0.0
-        self.ema_initialized = False
-
-    def set_mode(self, mode):
-        self.mode = mode
-        self.reset()
-
-    def reset(self):
-        self.median_buffer.clear()
-        self.ema_value = 0.0
-        self.ema_initialized = False
-
-    def process(self, raw_flow):
-        if self.mode == "Desativado":
-            return raw_flow
-
-        if self.mode == "Suave":
-            median_size = 3
-            base_deadband_pa = 12.0
-            alpha = 0.95
-        elif self.mode == "Moderado":
-            median_size = 5
-            base_deadband_pa = 16.0  # Limiar em Pa ligeiramente acima da borda de 15 Pa do ESP
-            alpha = 0.90
-        else:  # Agressivo
-            median_size = 5
-            base_deadband_pa = 20.0
-            alpha = 0.85
-
-        # O limiar de corte em L/min escala dinamicamente com o multiplicador de fluxo selecionado
-        deadband_flow = calculate_flow(base_deadband_pa)
-
-        if self.median_buffer.maxlen != median_size:
-            self.median_buffer = deque(self.median_buffer, maxlen=median_size)
-
-        # 1. Filtro de Mediana diretamente sobre o FLUXO (elimina 100% dos picos/glitches de 1-2 amostras)
-        self.median_buffer.append(raw_flow)
-        sorted_samples = sorted(self.median_buffer)
-        med_flow = sorted_samples[len(sorted_samples) // 2]
-
-        # 2. Deadband em fluxo que acompanha a escala de fluxo (zera o ruído perto de zero em qualquer escala)
-        if abs(med_flow) < deadband_flow:
-            med_flow = 0.0
-
-        # 3. Média Móvel Exponencial (EMA)
-        if not self.ema_initialized:
-            self.ema_value = med_flow
-            self.ema_initialized = True
-        else:
-            self.ema_value = alpha * med_flow + (1.0 - alpha) * self.ema_value
-
-        if abs(self.ema_value) < 1.0:
-            self.ema_value = 0.0
-
-        return self.ema_value
 
 pressure_filter = PressureFilter("Moderado")
 
@@ -872,8 +702,7 @@ def set_filter_mode(mode):
     log(f"Filtro de picos alterado para: {mode}")
 
 def set_flow_multiplier(val, name):
-    global flow_multiplier
-    flow_multiplier = val
+    pneumo.flow_multiplier = val
     log(f"Escala de fluxo alterada para: {val}x ({name})")
 
 OTA_UPGRADE_URL = "https://leoflt.com/s/pitaco2-0-firmware-upgrade"
@@ -2073,34 +1902,62 @@ def update_pressure_from_device(val_pa):
     last_update_time = time.time()
 
 
-# --- RECEBIMENTO: estado e validacao estao em transport.py ---
-# As callbacks abaixo mantem o contrato legado com a COM da Unity.
-def _oxi_link_ready():
-    return bool(oxi_sampling and ser_oxi and ser_oxi.is_open)
-
-
-def _send_qualified_bpm(bpm):
-    ser_oxi.write(f"{bpm},0\r\n".encode("ascii"))
-
-
-pitaco_router = PitacoMessageRouter(
-    monitor=ppg_monitor,
-    on_pressure=update_pressure_from_device,
-    can_send_bpm=_oxi_link_ready,
-    send_bpm=_send_qualified_bpm,
-    report_error=log,
-)
-
-
 def process_pitaco_line(line_str, allow_pressure=True, source="USB"):
-    """API de compatibilidade usada pelos loops legados USB e BLE."""
-    return pitaco_router.process_line(line_str, allow_pressure=allow_pressure,
-                                      source=source)
+    """Aceita pressao original/JSON 2.4 e registra PPG para o monitor."""
+    global last_oxi_sent
+    msg = parse_pitaco_line(line_str)
+    if msg is None:
+        return False
+    kind = msg.get("type")
+    ppg_monitor.observe(msg, source=source)
+    if kind == "pressure":
+        if allow_pressure:
+            update_pressure_from_device(msg["mpx5010dp"]["pressure_pa"])
+        return True
+    if kind == "g1":
+        return True
+    if kind != "sample":
+        return False
+
+    pressure = msg.get("mpx5010dp")
+    if allow_pressure and isinstance(pressure, dict) and pressure.get("valid") is True:
+        pa = pressure.get("pressure_pa")
+        if isinstance(pa, (float, int)) and not isinstance(pa, bool) and math.isfinite(pa):
+            update_pressure_from_device(float(pa))
+
+    ppg = msg.get("ppg")
+    sqi = msg.get("sqi")
+    if not isinstance(ppg, dict) or not isinstance(sqi, dict):
+        return True
+    bpm = ppg.get("bpm")
+    # Gate 01 PASS, BPM valido e porta virtual do oxímetro habilitada.
+    if (ppg.get("bpm_valid") is True and sqi.get("g1") is True
+            and isinstance(bpm, (int, float)) and not isinstance(bpm, bool)
+            and math.isfinite(bpm) and 35 <= bpm <= 200
+            and oxi_sampling and ser_oxi and ser_oxi.is_open
+            and time.monotonic() - last_oxi_sent >= 1.0):
+        # Contrato de jogo original: "FC,SpO2". Zero = SpO2 INDISPONIVEL,
+        # nao uma estimativa calculada. Em UI atual pode aparecer como 0%.
+        try:
+            ser_oxi.write(f"{round(bpm)},0\r\n".encode("ascii"))
+            last_oxi_sent = time.monotonic()
+        except serial.SerialException as exc:
+            log(f"Falha no envio de BPM para Unity: {exc}")
+    return True
 
 
 def ppg_notification_handler(sender, data):
-    """Recebe fragmentos GATT e delega a montagem/validacao ao roteador."""
-    pitaco_router.feed_ble_ppg(bytes(data))
+    # Uma notificacao pode ter apenas fragmentos do mesmo JSON; mede frames
+    # completos e erros SEM inventar amostras que nao chegaram.
+    ppg_monitor.note_ble_fragment()
+    for line_str in ble_ppg_lines.feed(bytes(data)):
+        try:
+            if not process_pitaco_line(line_str, allow_pressure=False, source="BLE"):
+                ppg_monitor.note_invalid_json()
+        except Exception as exc:
+            ppg_monitor.note_invalid_json()
+            log(f"Erro ao interpretar JSON PPG BLE: {exc}")
+
 
 def oximeter_command_loop():
     """Responde echox aos comandos da COM virtual sem mexer no PITACO legado."""
@@ -2275,7 +2132,7 @@ async def ble_bridge():
         root.after(0, lambda: ppg_graph_btn.configure(state="normal"))
 
         await client.start_notify(CHARACTERISTIC_UUID, notification_handler)
-        pitaco_router.reset_ble()
+        ble_ppg_lines.reset()
         ppg_notify_active = False
         try:
             await client.start_notify(PPG_NOTIFY_UUID, ppg_notification_handler)
@@ -2314,7 +2171,6 @@ def start_bridge():
 
     if running: return
     ppg_monitor.reset()  # nao misturar sessoes USB, BLE ou reconexoes
-    pitaco_router.reset_session()  # fragmentos BLE e limite BPM de sessao anterior
     
     mode = conn_mode_var.get()
     game_port = port_var.get()
@@ -2483,11 +2339,8 @@ def on_exit():
 refresh_ports() 
 root.protocol("WM_DELETE_WINDOW", on_exit)
 
-
 def run_gui():
-    """Inicia event loop Tk; ponto de entrada mantido em ble_client_mpx5010dp.py."""
     root.mainloop()
-
 
 if __name__ == "__main__":
     run_gui()
