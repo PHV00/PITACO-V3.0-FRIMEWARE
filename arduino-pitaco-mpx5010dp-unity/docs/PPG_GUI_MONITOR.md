@@ -170,3 +170,75 @@ própria; não é calculada nesta mudança de middleware.
 O início da aquisição é compartilhado: em modo somente monitor a ponte já
 envia r ao conectar; abrir qualquer gráfico **não deve repetir r** se
 is_sampling já está ativo. Nenhum gráfico roda processamento SQI novo.
+
+## Modo experimental PC: BPM e SpO₂ ilustrativa (opt-in, sem firmware novo)
+
+Disponivel **somente** no painel `Monitor Cardíaco / SpO₂`: habilitar a
+checkbox **Calcular BPM e SpO₂ experimentais NO PYTHON (não calibrados)**.
+Desligada por padrão; funciona igualmente por USB ou BLE, pois utiliza
+somente mensagens `sample` RED/IR já recebidas. Não muda a caracteristica
+GATT, firmware, sensor, G1, pressão, CSV RAW ou dados enviados à Unity.
+
+**Apresentacao:** legenda `FW qualificado` (roxo) = BPM fornecido pelo
+ESP32 com `bpm_valid=true`; `Python EXP.` (amarelo) = BPM independente
+calculado no PC; e gráfico `SpO₂ EXP. (%)` (verde) = DEMONSTRAÇÃO NÃO
+CALIBRADA. O painel mostra também índice R e motivo de indisponibilidade.
+Sem sinal, o gráfico tem lacunas/valor `--`, nunca interpola ou inventa
+medição. SpO₂ experimental **não é dispositivo médico nem prova de precisão**.
+
+### Como o cálculo é feito (pitaco24_experimental.py)
+
+1. Receber pares sincronizados RED/IR e `t_ms` (~25 Hz); descartar para
+   estimativa qualquer amostra sem contato ou sem `sqi.g1=true`.
+   Amostras inválidas permanecem preservadas no gráfico RAW e CSV.
+2. Formar 8 segundos contínuos de dados (pelo menos 7,5 s, 160 amostras),
+   testar continuidade, amostragem e presença de sinal óptico.
+   Mudança de contato ou gap reinicia a janela experimental.
+3. Para cada canal, remover DC variável por média móvel centrada de
+   aproximadamente 1 s e suavizar com 3 pontos para estimar componente AC.
+4. Estimar BPM pelo atraso de maior autocorrelação normalizada do IR
+   em 35–200 bpm; exigir regularidade (limiar experimental 0,57).
+5. Obter o índice de razão de razões
+   `R = (RMS(RED_AC)/media(RED)) / (RMS(IR_AC)/media(IR))`.
+   Exigir coerência entre canais (correlação > 0,70) e descartar
+   grandes variações de nível óptico (>12% de DC na janela).
+6. Aplicar **somente para demonstração** a aproximação encontrada
+   no exemplo Maxim/SparkFun:
+   `SpO₂_demo = -45.060 × R² + 30.354 × R + 94.845`,
+   dentro do domínio experimental de R; fora do domínio, mostrar `--`.
+   Essa curva **não foi calibrada para o PITACO, para a pessoa testada,
+   para o encaixe óptico nem para o dispositivo usado**. Um valor plausível
+   não equivale a aferição de saturação.
+
+A atualização ocorre a cada ~1 segundo de telemetria; todo cálculo é no
+PC, independente do filtro do pneumógrafo, e só quando a checkbox está
+ativa. O resultado experimental NÃO alimenta o contrato de jogo
+`FC,SpO2`: a saída original da Unity continua transmitindo somente BPM
+qualificado do firmware quando permitido, com SpO₂ indisponível.
+
+**Referências técnicas do algoritmo, não provas de acurácia:**
+
+- Analog Devices/Maxim, *MAX3010x EV Kits Recommended Configurations and
+  Operating Profiles*, seção SpO2, fórmula de ratio-of-ratios e necessidade
+  de calibração empírica:
+  https://www.analog.com/media/en/technical-documentation/user-guides/max3010x-ev-kits-recommended-configurations-and-operating-profiles.pdf
+- SparkFun, `spo2_algorithm.h`, algoritmo de demonstração Maxim,
+  `FreqS=25` e curva ilustrativa:
+  https://github.com/sparkfun/SparkFun_MAX3010x_Sensor_Library/blob/master/src/spo2_algorithm.h
+- Analog Devices, datasheet MAX30102:
+  https://www.analog.com/media/en/technical-documentation/data-sheets/max30102.pdf
+
+### Roteiro de validação experimental
+
+- Conectar via USB; abrir o monitor óptico; com dedo estável, marcar BPM
+  obtido por firmware e por Python **frente a oxímetro/medidor cardíaco de
+  referência** durante 60 s. Registrar CSV (RAW, G1, contato).
+- Repetir via BLE sem trocar firmware e comparar taxa, perdas e BPM.
+- Retirar o dedo por 10 s e recolocar: ambos os indicadores experimentais
+  precisam ficar indisponíveis e voltar somente após nova janela aceita.
+- Fazer movimento proposital: verificar rejeições e lacunas; não confundir
+  G1 PASS com ausência comprovada de artefato de movimento.
+- Registrar erro absoluto (BPM), tendência e dispersão em vários testes,
+  além de resultados com diferentes posições, pressão de contato e
+  iluminação. Para SpO₂, comparação com oxímetro comercial é apenas
+  exploratória, não substitui calibração clínica contra saturação arterial.
