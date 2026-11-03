@@ -24,7 +24,8 @@ jobs:
       - name: Sintaxe Python da ponte e do coletor
         run: |
           python3 -m py_compile arduino-pitaco-mpx5010dp-unity/ble_client_mpx5010dp.py
-          python3 -m py_compile arduino-pitaco-mpx5010dp-unity/pitaco24_ppg_probe.py
+          python3 -m py_compile arduino-pitaco-mpx5010dp-unity/pitaco_experimental/pitaco24_ppg_probe.py
+          python3 -m compileall -q arduino-pitaco-mpx5010dp-unity/pitaco_bridge
 
   esp32c3:
     runs-on: ubuntu-latest
