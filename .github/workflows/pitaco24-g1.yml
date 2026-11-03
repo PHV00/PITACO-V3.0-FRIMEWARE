@@ -25,6 +25,8 @@ jobs:
         run: |
           python3 -m py_compile arduino-pitaco-mpx5010dp-unity/ble_client_mpx5010dp.py
           python3 -m py_compile arduino-pitaco-mpx5010dp-unity/pitaco24_ppg_probe.py
+          python3 -m py_compile arduino-pitaco-mpx5010dp-unity/pitaco24_ble_probe.py
+          python3 -m py_compile arduino-pitaco-mpx5010dp-unity/pitaco24_protocol.py
 
   esp32c3:
     runs-on: ubuntu-latest
