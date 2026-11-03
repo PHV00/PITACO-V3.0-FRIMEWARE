@@ -799,7 +799,12 @@ void PollMAX30105() {
     uint16_t samples = 0;
     uint8_t reason = 1;
     g1Passed = g1Evaluate(&reason, &samples);
-    if (!ppgContactPresent) g1Passed = false;
+    if (!ppgContactPresent) {
+      // Uma janela sem contato nunca deve emitir G1 PASS, mesmo que
+      // os thresholds estatisticos sejam enganados por luminosidade.
+      if (reason == 0) reason = 10;  // CONTACT_ABSENT
+      g1Passed = false;
+    }
     g1Reason = reason;
     g1Ready = true;
     SendG1Json(reason, samples);

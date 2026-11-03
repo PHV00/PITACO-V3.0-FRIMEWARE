@@ -67,7 +67,8 @@ class AcquisitionLifecycleContract(unittest.TestCase):
                       "PPG_CONTACT,ABSENT", "instantContact",
                       "effectiveG1", "effectiveReason",
                       "ppgWindowStartMs = receiveMs",
-                      "if (!ppgContactPresent) g1Passed = false;",
+                      "if (!ppgContactPresent) {",
+                      "if (reason == 0) reason = 10;",
                       "beats=%u,contact=%u", "g1Reset();"):
             self.assertIn(token, f if token != "PPG_CONTACT_CONFIRM_SAMPLES" else SKETCH)
         self.assertEqual(f.count("const bool opticalPresent"), 1)
