@@ -2314,6 +2314,7 @@ def start_bridge():
 
     if running: return
     ppg_monitor.reset()  # nao misturar sessoes USB, BLE ou reconexoes
+    pitaco_router.reset_session()  # fragmentos BLE e limite BPM de sessao anterior
     
     mode = conn_mode_var.get()
     game_port = port_var.get()
