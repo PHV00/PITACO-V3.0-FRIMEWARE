@@ -90,6 +90,19 @@ class ExperimentalPpgTests(unittest.TestCase):
         self.assertIsNone(analyser.snapshot()["bpm"])
         self.assertIsNone(analyser.snapshot()["spo2"])
 
+    def test_disconnected_monitor_does_not_keep_live_estimate(self):
+        m = PpgMonitor()
+        m.set_experimental_enabled(True)
+        for i, (t, red, ir) in enumerate(synthetic()):
+            m.observe(msg(i, t, red, ir), "BLE", now=100+i*.04)
+        current = m.snapshot(now=110.0)["experimental"]
+        self.assertIsNotNone(current["bpm"])
+        stale = m.snapshot(now=113.0)["experimental"]
+        self.assertIsNone(stale["bpm"])
+        self.assertIsNone(stale["spo2"])
+        self.assertEqual(stale["status"], "Sem amostras recentes")
+        self.assertEqual(stale["bpm_history"], current["bpm_history"])
+
     def test_monitor_still_keeps_all_raw_and_legacy_bpm(self):
         m = PpgMonitor(max_points=300)
         self.assertFalse(m.snapshot()["experimental"]["enabled"])
