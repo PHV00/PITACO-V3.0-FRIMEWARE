@@ -1891,7 +1891,9 @@ def update_plot(frame):
         canvas.draw()
     return line_flow, line_red, line_ir,
 
-ani = animation.FuncAnimation(fig, update_plot, interval=50, blit=False, cache_frame_data=False)
+# Redesenho ~7 Hz: aquisição continua ~25 Hz em outra thread.
+# Menor carga Tk/Matplotlib reduz a chance de criar gaps no proprio testador.
+ani = animation.FuncAnimation(fig, update_plot, interval=150, blit=False, cache_frame_data=False)
 
 # --- LOGICA DE COMUNICACAO ---
 buffer = bytearray()
