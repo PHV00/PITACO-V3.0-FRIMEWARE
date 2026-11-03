@@ -1,4 +1,5 @@
 """Testes host do modelo de middleware: sem Tk, BLE, serial ou Arduino."""
+import ast
 import csv
 import pathlib
 import sys
@@ -120,6 +121,7 @@ class PpgMonitorTests(unittest.TestCase):
     def test_gui_wires_both_streams_without_touching_firmware(self):
         gui = (pathlib.Path(__file__).resolve().parents[1] /
                "ble_client_mpx5010dp.py").read_text(encoding="utf-8")
+        ast.parse(gui, filename="ble_client_mpx5010dp.py")
         for token in (
             "ppg_monitor.observe(msg, source=source)",
             'source="BLE"', 'source="USB"',
