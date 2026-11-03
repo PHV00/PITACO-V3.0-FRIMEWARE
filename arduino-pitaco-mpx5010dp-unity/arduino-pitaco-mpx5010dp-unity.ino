@@ -588,6 +588,12 @@ void PollMAX30105() {
     // COLLECTING: preparar a FIFO ainda em shutdown. No teste de bancada,
     // zerar ovf=31 enquanto parado funcionou; enquanto ativo nao funcionou.
     max30105.clearFIFO();
+    // Diagnostico do driver efetivamente linkado, emitido a cada inicio
+    // de sessao. Nao altera FIFO, BPM, G1 ou o JSON de amostras.
+    const uint8_t swSlots = max30105.getSoftwareBufferCapacity();
+    Serial.printf("X,PPG_DRIVER,impl=vendor_safe_fifo,sw_slots=%u,sw_usable=%u\n",
+                  (unsigned)swSlots,
+                  (unsigned)(swSlots > 0 ? swSlots - 1 : 0));
     const uint8_t preOvf = max30105.readRegister8(0x57, 0x05);
     const uint8_t preWr = max30105.getWritePointer();
     const uint8_t preRd = max30105.getReadPointer();
@@ -657,8 +663,9 @@ void PollMAX30105() {
     // O check() leu mais do que o anel interno conseguiu preservar.
     // Registra perda explicitamente para evitar falsos PASS do Gate 01.
     g1MarkAcquisitionGap();
-    Serial.printf("X,PPG_SW_RING_OVERRUN,novas=%u,disponiveis=%u\n",
-                  (unsigned)novos, (unsigned)disponiveis);
+    Serial.printf("X,PPG_SW_RING_OVERRUN,novas=%u,disponiveis=%u,sw_slots=%u\n",
+                  (unsigned)novos, (unsigned)disponiveis,
+                  (unsigned)max30105.getSoftwareBufferCapacity());
   }
 
   while (max30105.available()) {
