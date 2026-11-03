@@ -276,6 +276,13 @@ class PpgMonitor:
                 "source": self.source,
                 "experimental": self.experimental.snapshot()
             }
+        # Telemetria interrompida nao pode manter valores experimentais atuais.
+        # Historicos ficam disponiveis para diagnostico (nenhum RAW apagado).
+        if out["experimental"]["enabled"] and (
+                sample_age is None or sample_age >= 2.0):
+            out["experimental"].update(
+                bpm=None, spo2=None, ratio=None,
+                status="Sem amostras recentes")
         out["csv_active"] = self.csv.active
         out["csv_written"] = self.csv.written
         out["csv_dropped"] = self.csv.dropped
