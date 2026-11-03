@@ -1804,6 +1804,25 @@ spo2_state_label = ctk.CTkLabel(
     font=("Segoe UI", 12, "bold"), text_color="#fbbf24", anchor="w")
 spo2_state_label.pack(fill="x", padx=10)
 
+
+def toggle_ppg_experiment():
+    """Liga calculos de bancada no PC; nao envia seus valores para Unity."""
+    ppg_monitor.set_experimental_enabled(ppg_experiment_var.get())
+
+
+ppg_experiment_var = ctk.BooleanVar(value=False)
+ppg_experiment_checkbox = ctk.CTkCheckBox(
+    ppg_info_frame, variable=ppg_experiment_var,
+    text="Calcular BPM e SpO₂ experimentais NO PYTHON (não calibrados)",
+    text_color="#fbbf24", command=toggle_ppg_experiment)
+ppg_experiment_checkbox.pack(anchor="w", padx=12, pady=(6, 0))
+
+ppg_exp_status_label = ctk.CTkLabel(
+    ppg_info_frame,
+    text="Modo experimental: DESLIGADO | BPM Python: -- | R: --",
+    font=("Segoe UI", 11), text_color="#fbbf24", anchor="w")
+ppg_exp_status_label.pack(fill="x", padx=10, pady=(0, 2))
+
 ppg_stats_label = ctk.CTkLabel(
     ppg_info_frame, text="Recebidas: 0 | Perdas: 0 | G1: 0 | CSV: 0",
     font=("Segoe UI", 11), text_color="#9ca3af", anchor="w", wraplength=860)
@@ -1843,13 +1862,14 @@ ppg_csv_btn = ctk.CTkButton(
 ppg_csv_btn.pack(anchor="e", padx=12, pady=(2, 8))
 
 ppg_fig = Figure(figsize=(8, 6.3), dpi=100)
-ppg_grid = ppg_fig.add_gridspec(2, 1, height_ratios=(1.8, 1))
+ppg_grid = ppg_fig.add_gridspec(3, 1, height_ratios=(1.7, 0.95, 0.85))
 ax_ppg = ppg_fig.add_subplot(ppg_grid[0])
 ax_bpm = ppg_fig.add_subplot(ppg_grid[1], sharex=ax_ppg)
+ax_spo2 = ppg_fig.add_subplot(ppg_grid[2], sharex=ax_ppg)
 ppg_fig.patch.set_facecolor("#2b2b2b")
-ppg_fig.subplots_adjust(hspace=0.18, left=0.11, right=0.96,
-                         top=0.95, bottom=0.10)
-for optical_axis in (ax_ppg, ax_bpm):
+ppg_fig.subplots_adjust(hspace=0.24, left=0.11, right=0.96,
+                         top=0.96, bottom=0.085)
+for optical_axis in (ax_ppg, ax_bpm, ax_spo2):
     optical_axis.set_facecolor("#2b2b2b")
     optical_axis.tick_params(axis="x", colors="white")
     optical_axis.tick_params(axis="y", colors="white")
@@ -1861,13 +1881,23 @@ line_ir, = ax_ppg.plot([], [], color="#38bdf8", linewidth=1.6, label="IR")
 ax_ppg.legend(loc="upper right", facecolor="#2b2b2b",
               edgecolor="#555555", labelcolor="white", fontsize=9)
 
-ax_bpm.set_ylabel("BPM qualificado", color="white")
-ax_bpm.set_xlabel("Tempo do dispositivo (s)", color="white")
+ax_bpm.set_ylabel("BPM", color="white")
 ax_bpm.set_ylim(30, 205)
 line_bpm, = ax_bpm.plot([], [], color="#a78bfa", linewidth=1.8,
-                        marker=".", markersize=3, label="BPM")
+                        marker=".", markersize=3, label="FW qualificado")
+line_bpm_exp, = ax_bpm.plot([], [], color="#fbbf24", linewidth=1.6,
+                            marker=".", markersize=3, label="Python EXP.")
 ax_bpm.legend(loc="upper right", facecolor="#2b2b2b",
-              edgecolor="#555555", labelcolor="white", fontsize=9)
+              edgecolor="#555555", labelcolor="white", fontsize=8)
+
+ax_spo2.set_ylabel("SpO₂ EXP. (%)", color="white")
+ax_spo2.set_xlabel("Tempo do dispositivo (s)", color="white")
+ax_spo2.set_ylim(70, 101)
+line_spo2_exp, = ax_spo2.plot([], [], color="#34d399",
+                             linewidth=1.5, marker=".", markersize=3,
+                             label="Não calibrada")
+ax_spo2.legend(loc="upper right", facecolor="#2b2b2b",
+               edgecolor="#555555", labelcolor="white", fontsize=8)
 
 ppg_canvas = FigureCanvasTkAgg(ppg_fig, master=ppg_window)
 ppg_canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -1928,9 +1958,9 @@ ani = animation.FuncAnimation(fig, update_plot, interval=150, blit=False,
 
 
 def update_ppg_plot(_frame):
-    """Exibe sinais recebidos e BPM valido, sem manipular callbacks BLE."""
+    """Compara FW e algoritmo Python sem executar calculos na thread Tk."""
     if not is_ppg_plotting:
-        return line_red, line_ir, line_bpm
+        return line_red, line_ir, line_bpm, line_bpm_exp, line_spo2_exp
 
     snap = ppg_monitor.snapshot()
     history = snap["history"]
@@ -1957,12 +1987,36 @@ def update_ppg_plot(_frame):
     else:
         line_bpm.set_data([], [])
 
+    experimental = snap["experimental"]
+    if experimental["enabled"]:
+        line_bpm_exp.set_data(*zip(*experimental["bpm_history"])) if experimental["bpm_history"] else line_bpm_exp.set_data([], [])
+        line_spo2_exp.set_data(*zip(*experimental["spo2_history"])) if experimental["spo2_history"] else line_spo2_exp.set_data([], [])
+        py_bpm = (f"{experimental['bpm']:.1f}"
+                  if experimental["bpm"] is not None else "--")
+        py_ratio = (f"{experimental['ratio']:.3f}"
+                    if experimental["ratio"] is not None else "--")
+        spo2_text = (f"{experimental['spo2']:.1f}%"
+                     if experimental["spo2"] is not None else "--")
+        ppg_exp_status_label.configure(
+            text=(f"BPM Python EXP.: {py_bpm} | Índice R: {py_ratio} | "
+                  f"Estado: {experimental['status']}"))
+        spo2_state_label.configure(
+            text=(f"SpO₂ EXPERIMENTAL: {spo2_text} | "
+                  "NÃO CALIBRADA / NÃO VALIDADA — NÃO USAR CLINICAMENTE"))
+    else:
+        line_bpm_exp.set_data([], [])
+        line_spo2_exp.set_data([], [])
+        ppg_exp_status_label.configure(
+            text="Modo experimental: DESLIGADO | BPM Python: -- | R: --")
+        spo2_state_label.configure(
+            text="SpO₂: não calculada (RED e IR brutos; sem estimativa validada)")
+
     contact = {True: "presente", False: "ausente"}.get(snap["contact"], "--")
     g1_state = {True: "PASS", False: "REPROVADO"}.get(snap["g1_effective"], "aguardando")
     bpm_text = f"{snap['bpm']:.1f}" if snap["bpm"] is not None else "--"
     ppg_state_label.configure(
         text=(f"PPG {snap['source'] or '--'} | Contato: {contact} | "
-              f"G1: {g1_state} (motivo {snap['reason']}) | BPM: {bpm_text}"))
+              f"G1: {g1_state} (motivo {snap['reason']}) | BPM FW: {bpm_text}"))
     ppg_stats_label.configure(
         text=(f"Recebidas: {snap['samples']} | {snap['sample_rate']:.1f} Hz | "
               f"Perdas seq: {snap['missing']} | Duplicadas: {snap['duplicates']} | "
@@ -1972,7 +2026,7 @@ def update_ppg_plot(_frame):
               f"Pressão: {snap['pressure_messages']} | "
               f"CSV descartadas: {snap['csv_dropped']}"))
     ppg_canvas.draw()
-    return line_red, line_ir, line_bpm
+    return line_red, line_ir, line_bpm, line_bpm_exp, line_spo2_exp
 
 
 # Apenas redesenho ~7 Hz. Coleta BLE/USB ocorre em outras threads.
