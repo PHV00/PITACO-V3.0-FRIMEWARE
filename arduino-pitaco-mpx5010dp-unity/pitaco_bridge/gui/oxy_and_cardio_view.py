@@ -14,7 +14,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 
-def create_cardio_view(app):
+def create_oxy_and_cardio_view(app):
     """Monta a janela óptica utilizando os dados da conexão compartilhada."""
     root = app.root
     close_ppg_graph = app.close_ppg_graph

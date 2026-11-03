@@ -140,11 +140,11 @@ class PpgMonitorTests(unittest.TestCase):
                    "pitaco_bridge" / "gui")
         main_source = (gui_dir / "main_window.py").read_text(encoding="utf-8")
         pneumo_source = (gui_dir / "pneumo_view.py").read_text(encoding="utf-8")
-        cardio_source = (gui_dir / "cardio_view.py").read_text(encoding="utf-8")
+        cardio_source = (gui_dir / "oxy_and_cardio_view.py").read_text(encoding="utf-8")
         for filename, source in (
             ("main_window.py", main_source),
             ("pneumo_view.py", pneumo_source),
-            ("cardio_view.py", cardio_source),
+            ("oxy_and_cardio_view.py", cardio_source),
         ):
             ast.parse(source, filename=filename)
         gui = main_source + pneumo_source + cardio_source

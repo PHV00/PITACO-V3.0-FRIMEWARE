@@ -12,7 +12,7 @@ arduino-pitaco-mpx5010dp-unity/
     │   ├── __init__.py         # Reexporta run_gui()
     │   ├── main_window.py      # Janela principal, botões, USB/BLE, OTA e Unity
     │   ├── pneumo_view.py      # Janela respiratória, gráfico e aferições
-    │   └── cardio_view.py      # Janela óptica, RED/IR, BPM, SpO₂ demo e CSV
+    │   └── oxy_and_cardio_view.py      # Janela óptica, RED/IR, BPM, SpO₂ demo e CSV
     ├── configuration.py
     ├── ports.py
     ├── pneumo.py
@@ -27,7 +27,7 @@ arduino-pitaco-mpx5010dp-unity/
 |---|---|
 | `main_window.py` | criar a janela principal; botões de conexão, comandos, configuração e OTA; conexão BLE/USB compartilhada; ponte COM e Unity |
 | `pneumo_view.py` | janela respiratória; exibição de fluxo/pressão; relatório e aferições de pico, taxa e tempo inspiratório/expiratório |
-| `cardio_view.py` | janela PPG; curvas RED/IR, BPM firmware/Python e SpO₂ demonstrativa; indicadores G1 e botão de CSV |
+| `oxy_and_cardio_view.py` | janela PPG; curvas RED/IR, BPM firmware/Python e SpO₂ demonstrativa; indicadores G1 e botão de CSV |
 | `protocol.py` | ler mensagens PPG JSONL e recompor fragmentos BLE; inalterado |
 | `monitor.py` | estado, histórico, contadores de perdas e gravador CSV; inalterado |
 | `experimental.py` | BPM experimental e relação RED/IR; inalterado |
@@ -37,7 +37,7 @@ arduino-pitaco-mpx5010dp-unity/
 
 Os botões e o controle de aquisição continuam em `main_window.py`.
 As duas views são criadas por `create_pneumo_view(app)` e
-`create_cardio_view(app)`, recebendo o módulo principal como referência
+`create_oxy_and_cardio_view(app)`, recebendo o módulo principal como referência
 aos dados e ao estado compartilhados. Assim, não duplicam as conexões
 BLE/USB ou as filas. A leitura de flags (`is_plotting`,
 `is_ppg_plotting`, `running`) e métricas respiratórias é dinâmica;

@@ -22,14 +22,14 @@ class GuiSplitTests(unittest.TestCase):
 
     def test_views_own_their_existing_callbacks(self):
         pneumo = names(GUI_DIR / "pneumo_view.py")
-        cardio = names(GUI_DIR / "cardio_view.py")
+        cardio = names(GUI_DIR / "oxy_and_cardio_view.py")
         main = names(GUI_DIR / "main_window.py")
         for name in ("create_pneumo_view", "update_plot", "open_info_window",
                      "start_peak_calibration", "start_rate_calibration",
                      "start_timing_calibration"):
             self.assertIn(name, pneumo)
             self.assertNotIn(name, main)
-        for name in ("create_cardio_view", "update_ppg_plot",
+        for name in ("create_oxy_and_cardio_view", "update_ppg_plot",
                      "toggle_ppg_csv", "toggle_ppg_experiment"):
             self.assertIn(name, cardio)
             self.assertNotIn(name, main)
@@ -40,10 +40,11 @@ class GuiSplitTests(unittest.TestCase):
 
     def test_views_use_shared_state_and_do_not_open_a_second_radio(self):
         pneumo = (GUI_DIR / "pneumo_view.py").read_text(encoding="utf-8")
-        cardio = (GUI_DIR / "cardio_view.py").read_text(encoding="utf-8")
+        cardio = (GUI_DIR / "oxy_and_cardio_view.py").read_text(encoding="utf-8")
         main = (GUI_DIR / "main_window.py").read_text(encoding="utf-8")
         self.assertIn("create_pneumo_view(sys.modules[__name__])", main)
-        self.assertIn("create_cardio_view(sys.modules[__name__])", main)
+        self.assertIn("create_oxy_and_cardio_view(sys.modules[__name__])", main)
+        self.assertIn("from .oxy_and_cardio_view import create_oxy_and_cardio_view", main)
         self.assertIn("if app.is_plotting:", pneumo)
         self.assertIn("if not app.is_ppg_plotting:", cardio)
         self.assertIn("ppg_monitor.snapshot()", cardio)

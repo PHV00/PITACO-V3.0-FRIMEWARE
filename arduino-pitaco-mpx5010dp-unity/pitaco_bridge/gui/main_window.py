@@ -1019,7 +1019,7 @@ def log(msg):
 # As duas janelas compartilham a conexão e os dados deste módulo.
 # Apenas elementos visuais são instanciados nas views.
 from .pneumo_view import create_pneumo_view
-from .cardio_view import create_cardio_view
+from .oxy_and_cardio_view import create_oxy_and_cardio_view
 
 pneumo_view = create_pneumo_view(sys.modules[__name__])
 plot_window = pneumo_view.window
@@ -1035,12 +1035,12 @@ start_rate_calibration = pneumo_view.start_rate_calibration
 start_timing_calibration = pneumo_view.start_timing_calibration
 update_plot = pneumo_view.update_plot
 
-cardio_view = create_cardio_view(sys.modules[__name__])
-ppg_window = cardio_view.window
-ppg_csv_btn = cardio_view.csv_button
-toggle_ppg_experiment = cardio_view.toggle_ppg_experiment
-toggle_ppg_csv = cardio_view.toggle_ppg_csv
-update_ppg_plot = cardio_view.update_ppg_plot
+oxy_and_cardio_view = create_oxy_and_cardio_view(sys.modules[__name__])
+ppg_window = oxy_and_cardio_view.window
+ppg_csv_btn = oxy_and_cardio_view.csv_button
+toggle_ppg_experiment = oxy_and_cardio_view.toggle_ppg_experiment
+toggle_ppg_csv = oxy_and_cardio_view.toggle_ppg_csv
+update_ppg_plot = oxy_and_cardio_view.update_ppg_plot
 
 # --- LOGICA DE COMUNICACAO ---
 buffer = bytearray()
