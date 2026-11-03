@@ -1,5 +1,8 @@
 # PITACO 2.4 — MPX5010DP + MAX30105 + G1 + BPM experimental
 
+**Documentação do baseline:** [Visão geral](docs/BASELINE.md) · [Gate 01 e suas funções](docs/GATE_01.md) · [BLE, USB e ponte Unity](docs/BLE_USB.md). Capturas CSV locais ficam fora do Git.
+
+
 ## Objetivo e arquitetura minima
 
 Esta branch simplifica a PR anterior. Apenas dois arquivos de firmware:

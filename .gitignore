@@ -1,0 +1,20 @@
+# Capturas de bancada do PITACO 2.4 (nao sao codigo-fonte)
+arduino-pitaco-mpx5010dp-unity/*.csv
+arduino-pitaco-mpx5010dp-unity/*.log
+
+# Ambientes, caches e artefatos Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Binarios de compilacao gerados localmente; nao modifica itens ja rastreados
+*.elf
+*.bin
+*.hex
+*.o
+*.obj
+build/
+dist/

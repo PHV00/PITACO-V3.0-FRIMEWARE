@@ -130,6 +130,7 @@ void PollMAX30105();
 void SendPpgJson(const char* jsonLine);
 void SendG1Json(uint8_t reason, uint16_t samples);
 
+// BLE legado: estado da conexao; reinicia advertising apos desconexao.
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     deviceConnected = true;
@@ -147,6 +148,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 };
 
+// BLE legado: recebe comandos na characteristic original da pressao.
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) {
     deviceConnected = true; // State fallback: successful write guarantees active link
@@ -166,6 +168,7 @@ BLECharacteristic* pOtaControlChar;
 BLECharacteristic* pOtaDataChar;
 bool isOtaUpdating = false;
 
+// OTA legado: comandos START, END e ABORT.
 class OtaControlCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) {
     String val = pChar->getValue();
@@ -205,6 +208,7 @@ class OtaControlCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
+// OTA legado: grava os blocos recebidos durante atualizacao.
 class OtaDataCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) {
     if (!isOtaUpdating) return;
@@ -216,6 +220,7 @@ class OtaDataCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
+// Inicializa pressao/USB/BLE/OTA e adiciona PPG sem substituir o legado.
 void setup() {
   Serial.begin(115200);
   analogReadResolution(12);
@@ -272,6 +277,7 @@ void setup() {
 #endif
 }
 
+// Orquestra comandos, aquisicao PPG e a leitura de pressao do PITACO.
 void loop() {
   // Escuta comandos via USB Serial
   if (Serial.available()) {
@@ -331,6 +337,7 @@ void loop() {
   yield(); // libera a task
 }
 
+// Contrato original: e=echop, r=iniciar, f=parar, c=calibrar, z=zero 10s.
 void ListenCommand(char cmd) {
   if (cmd == 'e' || cmd == 'E') {
     if (zeroInProgress) {
@@ -357,6 +364,7 @@ void ListenCommand(char cmd) {
   }
 }
 
+// Status simultaneo via USB e characteristic BLE de pressao.
 void SendStatus(const char* line) {
   Serial.print(line);
   if (deviceConnected) {
@@ -365,6 +373,7 @@ void SendStatus(const char* line) {
   }
 }
 
+// Reinicia EMA e media movel apos a mudanca de referencia.
 void ResetPressureFilter() {
   const float inicial = voutToPa();
 #if MOVING_AVERAGE
@@ -376,6 +385,7 @@ void ResetPressureFilter() {
   emaInitialized = true;
 }
 
+// Inicia coleta do zero do MPX durante dez segundos.
 void StartTenSecondZero() {
   if (zeroInProgress || isOtaUpdating) return;
   zeroInProgress = true;
@@ -386,6 +396,7 @@ void StartTenSecondZero() {
   SendStatus("zero_start\n");
 }
 
+// Calcula nova referencia em Pa com amostras sem filtro.
 void PollTenSecondZero() {
   const unsigned long now = millis();
   if (now - zeroLastSampleMs >= ZERO_SAMPLE_INTERVAL_MS) {
@@ -417,6 +428,7 @@ void PollTenSecondZero() {
 }
 
 // Retorna a pressão lida com filtro mas sem calibração e deadband
+// Faz a filtragem MPX, antes de offset e deadband.
 float ReadRawPressurePa() {
   float newVal = voutToPa();
 
@@ -445,6 +457,7 @@ float ReadRawPressurePa() {
   return emaValue;
 }
 
+// Gerencia zero fixo provisorio ou calibracao por comando c.
 void Calibrate() {
   // Primeira execucao: zero logico fixo 100 Pa.
   // Apos comando 'c': determina o zero real com tubo em repouso.
@@ -471,6 +484,7 @@ void Calibrate() {
 #endif
 }
 
+// ADC MPX5010DP e conversao experimental de tensao em Pa.
 float voutToPa() {
   // analogReadMilliVolts ja usa a calibracao disponivel do ADC no core.
   const float adcVoltage = analogReadMilliVolts(PORT_SENSOR) / 1000.0f;
@@ -485,12 +499,14 @@ float voutToPa() {
 // PITACO 2.4: MAX30105 RED/IR + frequencia cardiaca experimental.
 // Um unico orquestrador .ino; G1 em gate_01_integrity.ino.
 // ---------------------------------------------------------------------------
+// Reinicia o detector optico de contato, separado do Gate 01.
 void ResetPpgContact() {
   ppgContactPresent = false;
   ppgContactGoodSamples = 0;
   ppgContactBadSamples = 0;
 }
 
+// Configura MAX30105, LEDs, FIFO e estado inicial STOPPED.
 void InitMAX30105() {
   Wire.begin(MAX30105_SDA, MAX30105_SCL);
   if (!max30105.begin(Wire, I2C_SPEED_STANDARD)) {
@@ -517,6 +533,7 @@ void InitMAX30105() {
 // A caracteristica de pressao original continua transmitindo 20 Hz;
 // o canal PPG transporta JSONL. Fracionar em 20B para MTU GATT minimo.
 // Receptor junta bytes ate o LF. Validar throughput real antes de producao.
+// Envia JSONL em USB e fragmentos BLE de ate 20 bytes por notificacao.
 void SendPpgJson(const char* jsonLine) {
   Serial.print(jsonLine);
   if (!deviceConnected || !pPpgCharacteristic) return;
@@ -529,6 +546,7 @@ void SendPpgJson(const char* jsonLine) {
   }
 }
 
+// Publica o resultado periodico da janela G1, sem alterar RAW.
 void SendG1Json(uint8_t reason, uint16_t samples) {
   char line[160];
   snprintf(line, sizeof(line),
@@ -538,6 +556,7 @@ void SendG1Json(uint8_t reason, uint16_t samples) {
   SendPpgJson(line);
 }
 
+// Executa FIFO, contato, BPM experimental, RAW e Gate 01 sem bloquear MPX.
 void PollMAX30105() {
   if (!ppgReady) return;
 
