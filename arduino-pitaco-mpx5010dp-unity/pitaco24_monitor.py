@@ -124,6 +124,7 @@ class PpgMonitor:
     def __init__(self, max_points=250):
         self._lock = threading.Lock()
         self.history = deque(maxlen=max_points)
+        self.bpm_history = deque(maxlen=max_points)
         self.recent_rx = deque(maxlen=400)
         self.csv = PpgCsvRecorder()
         self.reset()
@@ -131,6 +132,7 @@ class PpgMonitor:
     def reset(self):
         with self._lock:
             self.history.clear()
+            self.bpm_history.clear()
             self.recent_rx.clear()
             self.first_rx = None
             self.last_rx = None
@@ -203,6 +205,7 @@ class PpgMonitor:
                         # Seq retrocedeu; detectar reinicio, nao inflar perdas.
                         self.seq_resets += 1
                         self.history.clear()
+                        self.bpm_history.clear()
                         self.recent_rx.clear()
                         self.last_seq = seq
                 else:
@@ -215,13 +218,24 @@ class PpgMonitor:
                 self.recent_rx.append(now)
                 while self.recent_rx and now - self.recent_rx[0] > 10.0:
                     self.recent_rx.popleft()
-                self.history.append((t_ms / 1000.0 if isinstance(t_ms, (int, float))
-                                     else self.samples / 25.0,
-                                     ppg["red"], ppg["ir"]))
+                sample_t = (t_ms / 1000.0 if isinstance(t_ms, (int, float))
+                            else self.samples / 25.0)
+                self.history.append((sample_t, ppg["red"], ppg["ir"]))
                 self.contact = sqi.get("contact")
                 self.g1_effective = sqi.get("g1")
                 self.reason = sqi.get("reason")
-                self.bpm = ppg.get("bpm") if ppg.get("bpm_valid") is True else None
+                measured_bpm = ppg.get("bpm")
+                # O painel nao apresenta BPM se o firmware reprova contato/G1.
+                accepted_bpm = (
+                    measured_bpm if ppg.get("bpm_valid") is True
+                    and sqi.get("g1") is True and self.contact is not False
+                    and isinstance(measured_bpm, (int, float))
+                    and not isinstance(measured_bpm, bool)
+                    and 35 <= measured_bpm <= 200
+                    else None
+                )
+                self.bpm = accepted_bpm
+                self.bpm_history.append((sample_t, accepted_bpm))
         self.csv.record(msg, source, now)
 
     def snapshot(self, now=None):
@@ -235,7 +249,7 @@ class PpgMonitor:
             else:
                 rate = 0.0
             out = {
-                "history": list(self.history), "sample_rate": rate,
+                "history": list(self.history), "bpm_history": list(self.bpm_history), "sample_rate": rate,
                 "sample_age_s": sample_age,
                 "samples": self.samples, "missing": self.missing,
                 "duplicates": self.duplicates, "seq_resets": self.seq_resets,
