@@ -95,6 +95,7 @@ float heartBpm = 0.0f;
 float latestPressurePa = 0.0f;
 bool pressureValid = false;
 bool deviceConnected = false;
+bool ppgBleBinaryMode = false; // por conexao; default JSON para clientes antigos
 bool isCalibrated = false;
 bool isSampling = false;
 float calibrationOffsetPa = ZERO_REFERENCE_PA;
@@ -138,6 +139,7 @@ void SendG1Json(uint8_t reason, uint16_t samples);
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     deviceConnected = true;
+    ppgBleBinaryMode = false;
 #if DEBUG
     Serial.println("Client connected");
 #endif
@@ -145,6 +147,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
   
   void onDisconnect(BLEServer* pServer) {
     deviceConnected = false;
+    ppgBleBinaryMode = false;
 #if DEBUG
     Serial.println("Cliente disconectado, reiniciando advertising...");
 #endif
@@ -163,7 +166,17 @@ class MyCallbacks : public BLECharacteristicCallbacks {
       Serial.print("Received command: ");
       Serial.println(cmd);
 #endif
-      ListenCommand(cmd);
+      // Selecao BLE explicita (somente escrita GATT). Default = JSON anterior.
+      // CCCD sozinho difere entre Bluedroid e NimBLE, por isso nao basta.
+      if (cmd == 'b' || cmd == 'B') {
+        ppgBleBinaryMode = true;
+        Serial.println("X,PPG_BLE_MODE,BINARY");
+      } else if (cmd == 'j' || cmd == 'J') {
+        ppgBleBinaryMode = false;
+        Serial.println("X,PPG_BLE_MODE,JSON");
+      } else {
+        ListenCommand(cmd);
+      }
     }
   }
 };
@@ -548,7 +561,7 @@ void InitMAX30105() {
 void SendPpgJson(const char* jsonLine) {
   Serial.print(jsonLine);
   // Sem cliente inscrito em JSON, evitar 8-12 chamadas notify por amostra.
-  if (!deviceConnected || !pPpgCharacteristic ||
+  if (!deviceConnected || ppgBleBinaryMode || !pPpgCharacteristic ||
       !pPpgJsonCccd || !pPpgJsonCccd->getNotifications()) return;
   const size_t n = strlen(jsonLine);
   for (size_t off = 0; off < n; off += BLE_JSON_CHUNK_BYTES) {
@@ -581,7 +594,7 @@ static uint16_t bleCrc16(const uint8_t* p, uint8_t size) {
   return crc;
 }
 static bool blePpgSubscribed() {
-  return deviceConnected && pPpgBinaryCharacteristic &&
+  return deviceConnected && ppgBleBinaryMode && pPpgBinaryCharacteristic &&
          pPpgBinaryCccd && pPpgBinaryCccd->getNotifications();
 }
 static void blePpgNotify(uint8_t* p) {
