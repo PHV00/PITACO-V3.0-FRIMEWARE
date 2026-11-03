@@ -524,6 +524,14 @@ void MAX30105::setup(byte powerLevel, byte sampleAverage, byte ledMode, int samp
 // Data Collection
 //
 
+// Capacidade obtida do layout compilado neste MAX30105.cpp, nao apenas
+// de um #define impresso pelo sketch. Se outro driver sem este metodo
+// for linkado, a compilacao falha em vez de validar o binario errado.
+uint8_t MAX30105::getSoftwareBufferCapacity(void)
+{
+  return (uint8_t)(sizeof(sense.red) / sizeof(sense.red[0]));
+}
+
 //Tell caller how many samples are available
 uint8_t MAX30105::available(void)
 {
