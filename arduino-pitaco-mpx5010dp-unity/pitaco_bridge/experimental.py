@@ -146,7 +146,8 @@ def estimate_experimental(rows):
 class ExperimentalPpgAnalyzer:
     """Um analisador por sessao, desligado por padrao e independente da Unity."""
     def __init__(self):
-        self.enabled = False
+        # BPM e SpO2 de bancada sempre ativos; qualidade controla a exibicao.
+        self.enabled = True
         self.rows = deque(maxlen=300)
         self.bpm_history = deque(maxlen=300)
         self.spo2_history = deque(maxlen=300)
