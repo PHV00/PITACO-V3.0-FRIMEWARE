@@ -43,6 +43,40 @@ class ExperimentalPpgTests(unittest.TestCase):
         self.assertLess(result["spo2"], 98)
         self.assertEqual(result["status"], "DEMONSTRACAO NAO VALIDADA")
 
+    def test_realtime_window_starts_before_eight_seconds(self):
+        # A janela curta permite detectar ritmo com 3-4 segundos de sinal.
+        analyser = ExperimentalPpgAnalyzer()
+        for i, (t, red, ir) in enumerate(synthetic(bpm=110, seconds=4)):
+            analyser.observe(msg(i, t, red, ir))
+        snap = analyser.snapshot()
+        self.assertAlmostEqual(snap["bpm"], 110, delta=5)
+        self.assertIsNotNone(snap["spo2"])
+        # Atualizacao progressiva, sem esperar os antigos 8 s / 1 Hz.
+        self.assertGreaterEqual(len(snap["bpm_history"]), 8)
+
+    def test_g1_pending_is_diagnostic_but_contact_remains_required(self):
+        analyser = ExperimentalPpgAnalyzer()
+        for i, (t, red, ir) in enumerate(synthetic(bpm=100, seconds=4)):
+            analyser.observe(msg(i, t, red, ir, g1=False))
+        snap = analyser.snapshot()
+        self.assertAlmostEqual(snap["bpm"], 100, delta=6)
+        self.assertIsNotNone(snap["spo2"])
+        self.assertIn("G1 reprovado: SOMENTE DIAGNOSTICO", snap["status"])
+
+        # Nenhum valor deve aparecer com ausencia de contato, mesmo sem G1.
+        analyser.observe(msg(101, 4040, 1220, 1045, contact=False, g1=False))
+        self.assertIsNone(analyser.snapshot()["bpm"])
+        self.assertIsNone(analyser.snapshot()["spo2"])
+
+    def test_short_recording_without_contact_cannot_generate_spo2(self):
+        # Reproduz escala/duracao da captura de bancada enviada (28 amostras).
+        analyser = ExperimentalPpgAnalyzer()
+        for i in range(28):
+            analyser.observe(msg(i, 1436097 + 40*i, 1220, 1045,
+                                 contact=False, g1=False))
+        self.assertIsNone(analyser.snapshot()["bpm"])
+        self.assertIsNone(analyser.snapshot()["spo2"])
+
     def test_range_without_spo2_still_allows_bpm(self):
         data = synthetic(red_ac=1600, ir_ac=400)
         result = estimate_experimental(data)
@@ -67,7 +101,7 @@ class ExperimentalPpgTests(unittest.TestCase):
     def test_enabled_automatically_and_contact_gates(self):
         analyser = ExperimentalPpgAnalyzer()
         self.assertTrue(analyser.snapshot()["enabled"])
-        self.assertEqual(analyser.snapshot()["status"], "Aguardando G1 + contato")
+        self.assertEqual(analyser.snapshot()["status"], "Aguardando sinal / contato")
         for i, (t, red, ir) in enumerate(synthetic()):
             analyser.observe(msg(i,t,red,ir))
         self.assertAlmostEqual(analyser.snapshot()["bpm"], 75, delta=3)
