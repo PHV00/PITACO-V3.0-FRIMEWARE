@@ -44,18 +44,17 @@ O RAW RED/IR é transmitido mesmo quando G1 reprova, contanto que seja adquirido
 | pitaco24_protocol.parse_pitaco_line() | Entende pressão numérica legada ou JSON sample/g1 e valida RED/IR e seq |
 | pitaco24_protocol.BleJsonlBuffer.feed() | Junta bytes BLE até LF; descarta linhas indecodificáveis/excessivas |
 | update_pressure_from_device() | Atualiza valor e gráfico do caminho de pressão/fluxo legado |
-| process_pitaco_line() | Interpreta frames, encaminha pressão e libera BPM opcional quando contato/G1/BPM válido |
+| process_pitaco_line() | Interpreta frames, registra RED/IR, BPM e G1 no monitor e encaminha pressão quando permitido |
 | notification_handler() | Processa notificações legadas de pressão, zero e echop |
 | ppg_notification_handler() | Reconstrói JSON da characteristic PPG e evita duplicar pressão ao chamar allow_pressure=False |
 | serial_read_loop() | Encaminha comandos da COM virtual do jogo ao ESP32 via BLE ou USB |
 | usb_read_device_loop() | Lê a USB física e interpreta pressão, PPG e status |
 | ble_bridge() | Descobre/conecta dispositivo, assina as duas characteristics e gerencia desconexão |
-| oximeter_command_loop() | Trata COM virtual opcional do controlador Oximetro: echox, r e f |
 | start_bridge()/stop_bridge() | Abre/encerra portas, conexão e threads |
 | interpolation_loop() | Mantém atualização do fluxo/pressão enviado ao Unity |
 | PressureFilter.process() | Filtro do fluxo estimado na GUI; não altera RAW óptico |
 
-**Portas:** COM física do ESP32, COM virtual do PITACO e COM virtual do Oxímetro devem ser distintas. No canal opcional oxímetro, o cliente envia **FC,0** somente com BPM válido, G1 aprovado e o canal ativo: o 0 é sentinela **SpO2 indisponível**, não uma medição. Não permitir que a UI exiba 0% como se fosse oxigenação real.
+**Portas:** a COM física do ESP32 (quando usado USB) e a COM virtual do jogo respiratório devem ser distintas. **Não existe COM virtual de oxímetro**: MAX30102, BPM e G1 são recebidos do ESP32 pelo mesmo JSON PPG em USB/BLE. A Unity continua recebendo pressão pela COM do jogo; BPM/SpO₂ não são enviados à Unity por esta versão da ponte.
 
 ## Diagnóstico e testes
 
@@ -66,3 +65,7 @@ O RAW RED/IR é transmitido mesmo quando G1 reprova, contanto que seja adquirido
 - **Não mudar** UUIDs nem forma das mensagens sem migrar a ponte e a Unity.
 
 Ver também ../README_BLE_TESTE.md (histórico e roteiro BLE) e ../README_TESTE_FIFO_PPG.md (ensaios da FIFO). Verificação host: python -m unittest discover -s tests -p test_*.py. A exatidão de BPM, SpO2 e equivalência BLE/USB ainda requer validação física.
+
+## Middleware gráfico PPG (branch experimental isolada)
+
+O programa ble_client_mpx5010dp.py remonta PPG JSONL por BLE e USB e encaminha pressão para a Unity pela COM do jogo respiratório. O BPM fica disponível na GUI via JSON, sem porta COM de oxímetro. O monitor também mostra RED/IR RAW, contato, Gate 01, perdas de sequência e grava CSV opcional. **Não muda UUID, firmware ou transporte BLE**. Consultar [PPG_GUI_MONITOR.md](PPG_GUI_MONITOR.md) para arquitetura, funções e procedimento de comparação USB/BLE.

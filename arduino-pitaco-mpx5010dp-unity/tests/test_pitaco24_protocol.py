@@ -4,7 +4,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from pitaco24_protocol import BleJsonlBuffer, parse_pitaco_line
+from pitaco_bridge.protocol import BleJsonlBuffer, parse_pitaco_line
 
 
 def frame(seq=7):
