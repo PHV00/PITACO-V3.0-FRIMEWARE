@@ -24,15 +24,15 @@ def create_oxy_and_cardio_view(app):
     # Painel optico em janela separada; o pneumografo permanece original.
     ppg_window = ctk.CTkToplevel(root)
     ppg_window.title("PITACO 2.4 - Monitor cardíaco e oximetria")
-    ppg_window.geometry("920x790")
+    ppg_window.geometry("980x860")
     ppg_window.protocol("WM_DELETE_WINDOW", close_ppg_graph)
     ppg_window.withdraw()
 
     ppg_info_frame = ctk.CTkFrame(ppg_window, fg_color="#1f1f1f", corner_radius=6)
     ppg_info_frame.pack(fill="x", padx=12, pady=(10, 5))
 
-    # Cabecalho: estado detalhado a esquerda e DOIS indicadores ao vivo
-    # no canto superior direito (BPM ESP32/Python e SpO2 experimental).
+    # Cabecalho: estado a esquerda e QUATRO campos em duas linhas:
+    # BPM atual | BPM medio 60s; SpO2 atual | SpO2 media 60s.
     ppg_header_row = ctk.CTkFrame(ppg_info_frame, fg_color="transparent")
     ppg_header_row.pack(fill="x", padx=10, pady=(8, 2))
     ppg_metrics_frame = ctk.CTkFrame(ppg_header_row, fg_color="transparent")
@@ -67,8 +67,13 @@ def create_oxy_and_cardio_view(app):
         anchor="w", justify="left", wraplength=450)
     ppg_quality_label.pack(fill="x", pady=(2, 0))
 
+    ppg_bpm_row = ctk.CTkFrame(ppg_metrics_frame, fg_color="transparent")
+    ppg_bpm_row.pack(anchor="e", pady=(0, 6))
+    ppg_spo2_row = ctk.CTkFrame(ppg_metrics_frame, fg_color="transparent")
+    ppg_spo2_row.pack(anchor="e")
+
     ppg_metric_bpm = ctk.CTkFrame(
-        ppg_metrics_frame, fg_color="#111827", border_color="#475569",
+        ppg_bpm_row, fg_color="#111827", border_color="#475569",
         border_width=1, corner_radius=8, width=172, height=94)
     ppg_metric_bpm.pack(side="left", padx=(0, 8))
     ppg_metric_bpm.pack_propagate(False)
@@ -84,10 +89,32 @@ def create_oxy_and_cardio_view(app):
         text_color="#fbbf24")
     ppg_bpm_py_value.pack(pady=(0, 3))
 
+    ppg_metric_bpm_mean = ctk.CTkFrame(
+        ppg_bpm_row, fg_color="#111827", border_color="#475569",
+        border_width=1, corner_radius=8, width=172, height=94)
+    ppg_metric_bpm_mean.pack(side="left")
+    ppg_metric_bpm_mean.pack_propagate(False)
+    ctk.CTkLabel(
+        ppg_metric_bpm_mean, text="BPM MÉDIO · 60 s",
+        font=("Segoe UI", 11, "bold"),
+        text_color="#cbd5e1").pack(pady=(5, 0))
+    ppg_bpm_fw_mean_value = ctk.CTkLabel(
+        ppg_metric_bpm_mean, text="ESP32: --",
+        font=("Segoe UI", 14, "bold"), text_color="#a78bfa")
+    ppg_bpm_fw_mean_value.pack()
+    ppg_bpm_py_mean_value = ctk.CTkLabel(
+        ppg_metric_bpm_mean, text="Python EXP.: --",
+        font=("Segoe UI", 12, "bold"), text_color="#fbbf24")
+    ppg_bpm_py_mean_value.pack()
+    ppg_bpm_mean_status = ctk.CTkLabel(
+        ppg_metric_bpm_mean, text="Aguardando dados",
+        font=("Segoe UI", 9), text_color="#94a3b8")
+    ppg_bpm_mean_status.pack(pady=(0, 2))
+
     ppg_metric_spo2 = ctk.CTkFrame(
-        ppg_metrics_frame, fg_color="#111827", border_color="#475569",
-        border_width=1, corner_radius=8, width=148, height=94)
-    ppg_metric_spo2.pack(side="left")
+        ppg_spo2_row, fg_color="#111827", border_color="#475569",
+        border_width=1, corner_radius=8, width=172, height=94)
+    ppg_metric_spo2.pack(side="left", padx=(0, 8))
     ppg_metric_spo2.pack_propagate(False)
     ctk.CTkLabel(
         ppg_metric_spo2, text="SpO₂ EXP.", font=("Segoe UI", 11, "bold"),
@@ -99,6 +126,24 @@ def create_oxy_and_cardio_view(app):
     ctk.CTkLabel(
         ppg_metric_spo2, text="NÃO CALIBRADA", font=("Segoe UI", 9),
         text_color="#fbbf24").pack(pady=(0, 3))
+
+    ppg_metric_spo2_mean = ctk.CTkFrame(
+        ppg_spo2_row, fg_color="#111827", border_color="#475569",
+        border_width=1, corner_radius=8, width=172, height=94)
+    ppg_metric_spo2_mean.pack(side="left")
+    ppg_metric_spo2_mean.pack_propagate(False)
+    ctk.CTkLabel(
+        ppg_metric_spo2_mean, text="SpO₂ MÉDIA · 60 s",
+        font=("Segoe UI", 11, "bold"),
+        text_color="#cbd5e1").pack(pady=(5, 0))
+    ppg_spo2_mean_value = ctk.CTkLabel(
+        ppg_metric_spo2_mean, text="--", font=("Segoe UI", 20, "bold"),
+        text_color="#34d399")
+    ppg_spo2_mean_value.pack()
+    ppg_spo2_mean_status = ctk.CTkLabel(
+        ppg_metric_spo2_mean, text="Aguardando dados",
+        font=("Segoe UI", 9), text_color="#94a3b8")
+    ppg_spo2_mean_status.pack(pady=(0, 3))
 
     ppg_stats_label = ctk.CTkLabel(
         ppg_info_frame, text="Recebidas: 0 | Perdas: 0 | G1: 0 | CSV: 0",
@@ -236,12 +281,15 @@ def create_oxy_and_cardio_view(app):
             line_spo2_exp.set_data(xs_spo2, ys_spo2)
         else:
             line_spo2_exp.set_data([], [])
+        optical_live = (snap["contact"] is True
+                        and snap["sample_age_s"] is not None
+                        and snap["sample_age_s"] < 2.0)
         py_bpm = (f"{experimental['bpm']:.1f}"
-                  if experimental["bpm"] is not None else "--")
+                  if optical_live and experimental["bpm"] is not None else "--")
         py_ratio = (f"{experimental['ratio']:.3f}"
                     if experimental["ratio"] is not None else "--")
         spo2_text = (f"{experimental['spo2']:.1f}%"
-                     if experimental["spo2"] is not None else "--")
+                     if optical_live and experimental["spo2"] is not None else "--")
         ppg_exp_status_label.configure(
             text=(f"BPM Python EXP.: {py_bpm} | R (diagnóstico): {py_ratio} | "
                   f"Estado: {experimental['status']}"))
@@ -277,6 +325,35 @@ def create_oxy_and_cardio_view(app):
         ppg_bpm_fw_value.configure(text=f"ESP32: {bpm_text}")
         ppg_bpm_py_value.configure(text=f"Python EXP.: {py_bpm}")
         ppg_spo2_value.configure(text=spo2_text)
+
+        # Medias moveis separadas do instante: valores calculados por
+        # segundo, so com estimativas exibiveis e contato ainda presente.
+        mean60 = snap["mean60"]
+        fw_avg, py_avg, spo2_avg = (
+            mean60["bpm_fw"], mean60["bpm_py"], mean60["spo2"])
+        mean_visible = optical_live
+
+        def fmt_mean(metric, suffix=""):
+            value = metric["value"] if mean_visible else None
+            return f"{value:.1f}{suffix}" if value is not None else "--"
+
+        def mean_status(metric):
+            if not mean_visible:
+                return "Sem contato / telemetria"
+            seconds = metric["valid_seconds"]
+            if metric["status"] == "completa":
+                return f"Completa · {seconds}/60 s"
+            if metric["value"] is not None:
+                return f"Parcial · {seconds}/60 s"
+            return f"Aguardando · {seconds}/60 s"
+
+        ppg_bpm_fw_mean_value.configure(text=f"ESP32: {fmt_mean(fw_avg)}")
+        ppg_bpm_py_mean_value.configure(text=f"Python EXP.: {fmt_mean(py_avg)}")
+        ppg_bpm_mean_status.configure(
+            text=f"FW {fw_avg['valid_seconds']}s | PY {py_avg['valid_seconds']}s"
+                 if mean_visible else "Sem contato / telemetria")
+        ppg_spo2_mean_value.configure(text=fmt_mean(spo2_avg, "%"))
+        ppg_spo2_mean_status.configure(text=mean_status(spo2_avg))
         ppg_spo2_value.configure(
             text_color="#34d399" if experimental["spo2"] is not None
                        else "#fbbf24")
