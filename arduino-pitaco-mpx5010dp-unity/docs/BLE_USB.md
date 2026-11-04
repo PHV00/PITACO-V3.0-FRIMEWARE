@@ -4,7 +4,7 @@
 
 ## GATT: manter compatibilidade com o original
 
-Um serviço, **quatro** characteristics, mantendo o nome BLE PITACO V2.0.
+Um serviço, **cinco** characteristics nesta branch experimental; as quatro anteriores não mudam.
 
 | Papel | UUID | Contrato |
 | --- | --- | --- |
@@ -13,6 +13,7 @@ Um serviço, **quatro** characteristics, mantendo o nome BLE PITACO V2.0.
 | OTA controle legado | 3bcdff28-47fc-4a87-9684-7672c49d9266 | WRITE/NOTIFY; START 0x01 e tamanho 4 bytes, END 0x02, ABORT 0x03 |
 | OTA dados legado | 3bcdff29-47fc-4a87-9684-7672c49d9266 | WRITE/WRITE_NR; dados binários do firmware |
 | PPG JSONL novo | 3bcdff2a-47fc-4a87-9684-7672c49d9266 | READ/NOTIFY; RED/IR, BPM e G1 |
+| PPG compacto opt-in | 3bcdff2b-47fc-4a87-9684-7672c49d9266 | READ/NOTIFY; PPG/G1 em pacotes binários de 20 bytes |
 
 A characteristic PPG **não** recebe comandos: e/r/f/c/z continuam na characteristic de pressão legada. Pressão ainda sai como linha numérica a ~20 Hz tanto em USB como na BLE legada.
 
@@ -27,7 +28,7 @@ A characteristic PPG **não** recebe comandos: e/r/f/c/z continuam na characteri
 | SendStatus() | Responde em USB e, se conectado, envia notify de pressão/status |
 | OtaControlCallbacks.onWrite() | START chama Update.begin e pausa sessão; END chama Update.end e reinicia; ABORT aborta |
 | OtaDataCallbacks.onWrite() | Grava dados OTA recebidos com Update.write enquanto OTA está ativa |
-| setup() | Cria servidor BLE, serviço e quatro characteristics, inicia advertising e MAX30105 |
+| setup() | Cria servidor BLE, serviço e cinco characteristics, inicia advertising e MAX30105 |
 | loop() | Escuta USB, acompanha PPG, calibra e publica pressão numérica no USB e GATT antigo |
 | SendPpgJson() | Imprime linha JSONL completa na USB; divide notificações BLE em blocos de no máximo 20 bytes |
 | SendG1Json() | Gera evento JSONL type=g1 a cada janela |
@@ -66,3 +67,7 @@ O RAW RED/IR é transmitido mesmo quando G1 reprova, contanto que seja adquirido
 - **Não mudar** UUIDs nem forma das mensagens sem migrar a ponte e a Unity.
 
 Ver também ../README_BLE_TESTE.md (histórico e roteiro BLE) e ../README_TESTE_FIFO_PPG.md (ensaios da FIFO). Verificação host: python -m unittest discover -s tests -p test_*.py. A exatidão de BPM, SpO2 e equivalência BLE/USB ainda requer validação física.
+
+## Canal compacto PPG v1 experimental
+
+Além do canal JSON BLE existente, o firmware oferece PPG compacto de 20 bytes por NOTIFY. Após assinar o novo UUID, a ponte envia o comando BLE `b` à characteristic legada; `j` retorna ao JSON. O modo inicial permanece JSON para compatibilidade, e a transmissão USB JSONL não muda. Mais detalhes em [BLE_COMPACT_V1.md](BLE_COMPACT_V1.md).

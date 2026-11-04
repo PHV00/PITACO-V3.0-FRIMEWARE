@@ -5,6 +5,8 @@ isoladamente no PC. O envio de dados raw para G2+ usara os mesmos frames.
 """
 import json
 import math
+import binascii
+import struct
 
 
 def parse_pitaco_line(text):
@@ -70,3 +72,65 @@ class BleJsonlBuffer:
                 if len(self.buf) > self.max_line_bytes:
                     self.buf.clear()
         return completed
+
+
+# BLE PPG compacto v1: USB e characteristic JSON anterior seguem JSONL.
+BLE_PPG_BINARY_UUID = "3bcdff2b-47fc-4a87-9684-7672c49d9266"
+BLE_PPG_BINARY_SIZE = 20
+
+
+def decode_ble_ppg_frame(data):
+    """Decodifica frame v1 para a mesma estrutura dict de JSONL.
+
+    Layout: magic A5, tipo, seq/window u16 LE, t_ms u32 LE,
+    payload nos bytes 8..17 e crc16/CCITT-FALSE LE nos bytes 18..19.
+    Pressao chega na characteristic BLE legada, separadamente.
+    """
+    data = bytes(data)
+    if len(data) != BLE_PPG_BINARY_SIZE or data[0] != 0xA5:
+        raise ValueError("BLE PPG: comprimento ou magic incorreto")
+    crc_received = struct.unpack_from("<H", data, 18)[0]
+    if binascii.crc_hqx(data[:18], 0xFFFF) != crc_received:
+        raise ValueError("BLE PPG: CRC16 invalido")
+    kind = data[1]
+    index, t_ms = struct.unpack_from("<HI", data, 2)
+    if kind == 1:
+        red = int.from_bytes(data[8:11], "little")
+        ir = int.from_bytes(data[11:14], "little")
+        bpm10 = struct.unpack_from("<H", data, 14)[0]
+        flags, reason = data[16], data[17]
+        if red > 262143 or ir > 262143 or flags & 0xF0 or reason > 10:
+            raise ValueError("BLE PPG: campo fora da faixa")
+        bpm_valid = bool(flags & 1)
+        contact = bool(flags & 2)
+        g1_ready = bool(flags & 4)
+        g1_pass = bool(flags & 8)
+        if g1_pass and not g1_ready:
+            raise ValueError("BLE PPG: G1 PASS sem janela avaliada")
+        if bpm_valid and (bpm10 == 0xFFFF or not contact or not g1_pass):
+            raise ValueError("BLE PPG: BPM invalido/inconsistente")
+        if not bpm_valid and bpm10 != 0xFFFF:
+            raise ValueError("BLE PPG: sentinela BPM invalida")
+        return {
+            "type": "sample", "seq": index, "t_ms": t_ms,
+            "ppg": {
+                "red": red, "ir": ir,
+                "bpm": (bpm10 / 10.0) if bpm_valid else None,
+                "bpm_valid": bpm_valid
+            },
+            "sqi": {
+                "g1": (g1_pass if g1_ready else None) if contact else False,
+                "reason": reason, "contact": contact
+            }
+        }
+    if kind == 2:
+        samples = struct.unpack_from("<H", data, 8)[0]
+        reason, passed = data[10], data[11]
+        if (reason > 10 or passed not in (0, 1) or passed != (reason == 0)
+                or any(data[12:18])):
+            raise ValueError("BLE PPG: janela G1 inconsistente")
+        return {
+            "type": "g1", "window": index, "t_ms": t_ms,
+            "sqi": {"g1": bool(passed), "reason": reason, "samples": samples}
+        }
+    raise ValueError("BLE PPG: tipo ou versao desconhecido")

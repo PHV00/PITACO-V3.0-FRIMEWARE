@@ -14,7 +14,8 @@ import asyncio
 import time
 import struct
 import json
-from pitaco24_protocol import parse_pitaco_line, BleJsonlBuffer
+from pitaco24_protocol import (parse_pitaco_line, BleJsonlBuffer,
+                               decode_ble_ppg_frame, BLE_PPG_BINARY_UUID)
 import tempfile
 import urllib.request
 import urllib.error
@@ -337,6 +338,13 @@ ser_device = None
 oxi_sampling = False
 last_oxi_sent = 0.0
 ble_ppg_lines = BleJsonlBuffer()
+ble_ppg_last_seq = None
+ble_ppg_received = 0
+ble_ppg_missing = 0
+ble_ppg_duplicates = 0
+ble_ppg_invalid = 0
+ble_ppg_windows = 0
+ble_ppg_report_time = 0.0
 ble_loop = None
 ble_loop_thread = None
 
@@ -1856,10 +1864,64 @@ def process_pitaco_line(line_str, allow_pressure=True):
     return True
 
 
+def reset_ble_ppg_stats():
+    """Reinicia estatisticas do transporte, nao do SQI ou do sensor."""
+    global ble_ppg_last_seq, ble_ppg_received, ble_ppg_missing
+    global ble_ppg_duplicates, ble_ppg_invalid, ble_ppg_windows, ble_ppg_report_time
+    ble_ppg_last_seq = None
+    ble_ppg_received = ble_ppg_missing = ble_ppg_duplicates = 0
+    ble_ppg_invalid = ble_ppg_windows = 0
+    ble_ppg_report_time = time.monotonic()
+
+
+def record_ble_ppg_frame(msg):
+    """Contabiliza recebimento pela sequencia 16-bit, sem preencher perdas."""
+    global ble_ppg_last_seq, ble_ppg_received, ble_ppg_missing
+    global ble_ppg_duplicates, ble_ppg_windows, ble_ppg_report_time
+    if msg.get("type") == "sample":
+        seq = msg["seq"]
+        if ble_ppg_last_seq is not None:
+            jump = (seq - ble_ppg_last_seq) & 0xFFFF
+            if jump == 0:
+                ble_ppg_duplicates += 1
+            elif jump < 32768:
+                if jump > 1:
+                    ble_ppg_missing += jump - 1
+            else:
+                # Reinicio de seq/reordenacao; nao inventar perdas.
+                log("[BLE/PPG] Sequencia retrocedeu; verificar reinicio do firmware.")
+        ble_ppg_last_seq = seq
+        ble_ppg_received += 1
+    elif msg.get("type") == "g1":
+        ble_ppg_windows += 1
+    now = time.monotonic()
+    if now - ble_ppg_report_time >= 10:
+        log("[BLE/PPG] recebidas=%d faltantes_seq=%d duplicadas=%d "
+            "frames_invalidos=%d janelas_G1=%d" %
+            (ble_ppg_received, ble_ppg_missing, ble_ppg_duplicates,
+             ble_ppg_invalid, ble_ppg_windows))
+        ble_ppg_report_time = now
+
+
+def ppg_binary_notification_handler(sender, data):
+    """Uma notificacao de 20 B = uma amostra PPG ou evento G1."""
+    global ble_ppg_invalid
+    try:
+        msg = decode_ble_ppg_frame(data)
+    except ValueError:
+        ble_ppg_invalid += 1
+        return
+    record_ble_ppg_frame(msg)
+    process_pitaco_line(json.dumps(msg, separators=(",", ":")), allow_pressure=False)
+
+
 def ppg_notification_handler(sender, data):
     # Cada notify pode conter apenas fragmentos de uma linha JSON.
     for line_str in ble_ppg_lines.feed(bytes(data)):
         try:
+            msg = parse_pitaco_line(line_str)
+            if msg is not None:
+                record_ble_ppg_frame(msg)
             process_pitaco_line(line_str, allow_pressure=False)
         except Exception as exc:
             log(f"Erro ao interpretar JSON PPG BLE: {exc}")
@@ -2038,13 +2100,23 @@ async def ble_bridge():
 
         await client.start_notify(CHARACTERISTIC_UUID, notification_handler)
         ble_ppg_lines.reset()
-        ppg_notify_active = False
+        reset_ble_ppg_stats()
+        ppg_transport = None
         try:
-            await client.start_notify(PPG_NOTIFY_UUID, ppg_notification_handler)
-            ppg_notify_active = True
-            log("Canal PPG/JSON BLE ativo.")
-        except Exception as e:
-            log(f"Canal PPG/JSON BLE nao disponivel: {e}")
+            # Preferir 1 frame/notify, sem depender de negociacao de MTU.
+            await client.start_notify(BLE_PPG_BINARY_UUID, ppg_binary_notification_handler)
+            ppg_transport = BLE_PPG_BINARY_UUID
+            await client.write_gatt_char(CHARACTERISTIC_UUID, b"b", response=True)
+            log("Canal PPG BLE compacto v1 (20 B/notificacao) ativo.")
+        except Exception as binary_error:
+            # Firmware antigo ainda funciona com JSONL fracionado.
+            log(f"PPG compacto indisponivel, tentando JSON legado: {binary_error}")
+            try:
+                await client.start_notify(PPG_NOTIFY_UUID, ppg_notification_handler)
+                ppg_transport = PPG_NOTIFY_UUID
+                log("Canal PPG/JSON BLE legado ativo.")
+            except Exception as json_error:
+                log(f"Canal PPG BLE indisponivel: {json_error}")
         if not (ser and ser.is_open):
             # Em monitor sem Unity, cliente inicia a leitura.
             await client.write_gatt_char(CHARACTERISTIC_UUID, b'e', response=True)
@@ -2055,8 +2127,8 @@ async def ble_bridge():
             await asyncio.sleep(0.1)
 
         if client.is_connected:
-            if ppg_notify_active:
-                await client.stop_notify(PPG_NOTIFY_UUID)
+            if ppg_transport:
+                await client.stop_notify(ppg_transport)
             await client.stop_notify(CHARACTERISTIC_UUID)
             await client.disconnect()
 
