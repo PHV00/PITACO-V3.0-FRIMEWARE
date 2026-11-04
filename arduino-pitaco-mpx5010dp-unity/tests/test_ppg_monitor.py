@@ -173,6 +173,8 @@ class PpgMonitorTests(unittest.TestCase):
             "ppg_metric_bpm = ctk.CTkFrame(",
             "ppg_metric_spo2 = ctk.CTkFrame(",
             "ppg_spo2_value.configure(text=spo2_text)",
+            "ppg_quality_label.configure(",
+            "Reinícios seq:",
             "line_bpm_exp.set_data(",
             "bpm_fw_corner.set_text(",
             "bpm_py_corner.set_text(",
