@@ -1,7 +1,7 @@
 name: PITACO 2.4 USB BLE JSON + ESP32-C3 build
 on:
   push:
-    branches: [feature/pitaco-24-simple-json-usb-ble-bpm]
+    branches: [feature/pitaco-24-simple-json-usb-ble-bpm, feature/ppg-sqi-bpm-25hz-validation]
   pull_request:
     paths:
       - 'arduino-pitaco-mpx5010dp-unity/**'
