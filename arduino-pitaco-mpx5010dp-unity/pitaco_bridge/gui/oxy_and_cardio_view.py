@@ -1,0 +1,397 @@
+"""Monitor cardíaco: PPG RED/IR, BPM FW/Python, SpO2 demo e CSV.
+
+Somente apresentacao: os calculos BPM/SpO2 de bancada sao automaticos
+no monitor.py / experimental.py. Sem conexao BLE propria.
+"""
+import datetime
+import math
+from types import SimpleNamespace
+from tkinter import filedialog
+
+import customtkinter as ctk
+import matplotlib.animation as animation
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+
+
+def create_oxy_and_cardio_view(app):
+    """Monta a janela óptica utilizando os dados da conexão compartilhada."""
+    root = app.root
+    close_ppg_graph = app.close_ppg_graph
+    ppg_monitor = app.ppg_monitor
+    log = app.log
+
+    # Painel optico em janela separada; o pneumografo permanece original.
+    ppg_window = ctk.CTkToplevel(root)
+    ppg_window.title("PITACO 2.4 - Monitor cardíaco e oximetria")
+    ppg_window.geometry("980x860")
+    ppg_window.protocol("WM_DELETE_WINDOW", close_ppg_graph)
+    ppg_window.withdraw()
+
+    ppg_info_frame = ctk.CTkFrame(ppg_window, fg_color="#1f1f1f", corner_radius=6)
+    ppg_info_frame.pack(fill="x", padx=12, pady=(10, 5))
+
+    # Cabecalho: estado a esquerda e QUATRO campos em duas linhas:
+    # BPM atual | BPM medio 60s; SpO2 atual | SpO2 media 60s.
+    ppg_header_row = ctk.CTkFrame(ppg_info_frame, fg_color="transparent")
+    ppg_header_row.pack(fill="x", padx=10, pady=(8, 2))
+    ppg_metrics_frame = ctk.CTkFrame(ppg_header_row, fg_color="transparent")
+    ppg_metrics_frame.pack(side="right", anchor="ne", padx=(8, 0))
+    ppg_status_frame = ctk.CTkFrame(ppg_header_row, fg_color="transparent")
+    ppg_status_frame.pack(side="left", fill="both", expand=True, anchor="nw")
+
+    ppg_state_label = ctk.CTkLabel(
+        ppg_status_frame, text="PPG: sem dados | Contato: -- | G1: -- | BPM: --",
+        font=("Segoe UI", 12, "bold"), text_color="#e2e8f0",
+        anchor="w", justify="left", wraplength=450)
+    ppg_state_label.pack(fill="x", pady=(0, 2))
+
+    spo2_state_label = ctk.CTkLabel(
+        ppg_status_frame,
+        text="SpO₂ EXP.: -- | NÃO CALIBRADA — NÃO USAR CLINICAMENTE",
+        font=("Segoe UI", 11, "bold"), text_color="#fbbf24",
+        anchor="w", justify="left", wraplength=450)
+    spo2_state_label.pack(fill="x")
+
+    ppg_exp_status_label = ctk.CTkLabel(
+        ppg_status_frame,
+        text="BPM Python EXP.: -- | Índice R: -- | Aguardando sinal / contato",
+        font=("Segoe UI", 11), text_color="#fbbf24",
+        anchor="w", justify="left", wraplength=450)
+    ppg_exp_status_label.pack(fill="x", pady=(0, 2))
+
+    ppg_quality_label = ctk.CTkLabel(
+        ppg_status_frame,
+        text="Qualidade separada: aguardando amostras",
+        font=("Segoe UI", 11, "bold"), text_color="#9ca3af",
+        anchor="w", justify="left", wraplength=450)
+    ppg_quality_label.pack(fill="x", pady=(2, 0))
+
+    ppg_bpm_row = ctk.CTkFrame(ppg_metrics_frame, fg_color="transparent")
+    ppg_bpm_row.pack(anchor="e", pady=(0, 6))
+    ppg_spo2_row = ctk.CTkFrame(ppg_metrics_frame, fg_color="transparent")
+    ppg_spo2_row.pack(anchor="e")
+
+    ppg_metric_bpm = ctk.CTkFrame(
+        ppg_bpm_row, fg_color="#111827", border_color="#475569",
+        border_width=1, corner_radius=8, width=172, height=94)
+    ppg_metric_bpm.pack(side="left", padx=(0, 8))
+    ppg_metric_bpm.pack_propagate(False)
+    ctk.CTkLabel(
+        ppg_metric_bpm, text="BPM ATUAL", font=("Segoe UI", 11, "bold"),
+        text_color="#cbd5e1").pack(pady=(6, 0))
+    ppg_bpm_fw_value = ctk.CTkLabel(
+        ppg_metric_bpm, text="ESP32: --", font=("Segoe UI", 14, "bold"),
+        text_color="#a78bfa")
+    ppg_bpm_fw_value.pack(pady=(0, 0))
+    ppg_bpm_py_value = ctk.CTkLabel(
+        ppg_metric_bpm, text="Python EXP.: --", font=("Segoe UI", 12, "bold"),
+        text_color="#fbbf24")
+    ppg_bpm_py_value.pack(pady=(0, 3))
+
+    ppg_metric_bpm_mean = ctk.CTkFrame(
+        ppg_bpm_row, fg_color="#111827", border_color="#475569",
+        border_width=1, corner_radius=8, width=172, height=94)
+    ppg_metric_bpm_mean.pack(side="left")
+    ppg_metric_bpm_mean.pack_propagate(False)
+    ctk.CTkLabel(
+        ppg_metric_bpm_mean, text="BPM MÉDIO · 60 s",
+        font=("Segoe UI", 11, "bold"),
+        text_color="#cbd5e1").pack(pady=(5, 0))
+    ppg_bpm_fw_mean_value = ctk.CTkLabel(
+        ppg_metric_bpm_mean, text="ESP32: --",
+        font=("Segoe UI", 14, "bold"), text_color="#a78bfa")
+    ppg_bpm_fw_mean_value.pack()
+    ppg_bpm_py_mean_value = ctk.CTkLabel(
+        ppg_metric_bpm_mean, text="Python EXP.: --",
+        font=("Segoe UI", 12, "bold"), text_color="#fbbf24")
+    ppg_bpm_py_mean_value.pack()
+    ppg_bpm_mean_status = ctk.CTkLabel(
+        ppg_metric_bpm_mean, text="Aguardando dados",
+        font=("Segoe UI", 9), text_color="#94a3b8")
+    ppg_bpm_mean_status.pack(pady=(0, 2))
+
+    ppg_metric_spo2 = ctk.CTkFrame(
+        ppg_spo2_row, fg_color="#111827", border_color="#475569",
+        border_width=1, corner_radius=8, width=172, height=94)
+    ppg_metric_spo2.pack(side="left", padx=(0, 8))
+    ppg_metric_spo2.pack_propagate(False)
+    ctk.CTkLabel(
+        ppg_metric_spo2, text="SpO₂ EXP.", font=("Segoe UI", 11, "bold"),
+        text_color="#cbd5e1").pack(pady=(6, 0))
+    ppg_spo2_value = ctk.CTkLabel(
+        ppg_metric_spo2, text="--", font=("Segoe UI", 20, "bold"),
+        text_color="#34d399")
+    ppg_spo2_value.pack(pady=(0, 0))
+    ctk.CTkLabel(
+        ppg_metric_spo2, text="NÃO CALIBRADA", font=("Segoe UI", 9),
+        text_color="#fbbf24").pack(pady=(0, 3))
+
+    ppg_metric_spo2_mean = ctk.CTkFrame(
+        ppg_spo2_row, fg_color="#111827", border_color="#475569",
+        border_width=1, corner_radius=8, width=172, height=94)
+    ppg_metric_spo2_mean.pack(side="left")
+    ppg_metric_spo2_mean.pack_propagate(False)
+    ctk.CTkLabel(
+        ppg_metric_spo2_mean, text="SpO₂ MÉDIA · 60 s",
+        font=("Segoe UI", 11, "bold"),
+        text_color="#cbd5e1").pack(pady=(5, 0))
+    ppg_spo2_mean_value = ctk.CTkLabel(
+        ppg_metric_spo2_mean, text="--", font=("Segoe UI", 20, "bold"),
+        text_color="#34d399")
+    ppg_spo2_mean_value.pack()
+    ppg_spo2_mean_status = ctk.CTkLabel(
+        ppg_metric_spo2_mean, text="Aguardando dados",
+        font=("Segoe UI", 9), text_color="#94a3b8")
+    ppg_spo2_mean_status.pack(pady=(0, 3))
+
+    ppg_stats_label = ctk.CTkLabel(
+        ppg_info_frame, text="Recebidas: 0 | Perdas: 0 | G1: 0 | CSV: 0",
+        font=("Segoe UI", 11), text_color="#9ca3af", anchor="w", wraplength=860)
+    ppg_stats_label.pack(fill="x", padx=10, pady=(1, 4))
+
+
+    def toggle_ppg_csv():
+        """CSV optico inclui amostras recusadas pelo G1 e contato ausente."""
+        if ppg_monitor.csv.active:
+            try:
+                ppg_monitor.csv.stop()
+                ppg_csv_btn.configure(text="Gravar CSV PPG")
+                snap = ppg_monitor.snapshot()
+                log(f"CSV PPG finalizado: {snap['csv_written']} linhas; "
+                    f"descartadas pelo gravador: {snap['csv_dropped']}.")
+            except Exception as exc:
+                log(f"Falha ao finalizar CSV PPG: {exc}")
+            return
+        initial = "pitaco24_ppg_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"
+        target = filedialog.asksaveasfilename(
+            parent=ppg_window, title="Gravar dados brutos PPG/G1/pressao",
+            initialfile=initial, defaultextension=".csv",
+            filetypes=[("Dados CSV", "*.csv")])
+        if not target:
+            return
+        try:
+            ppg_monitor.csv.start(target)
+            ppg_csv_btn.configure(text="Encerrar CSV PPG")
+            log("Gravacao CSV PPG iniciada: " + target)
+        except Exception as exc:
+            log(f"Falha ao abrir gravacao CSV: {exc}")
+
+
+    ppg_csv_btn = ctk.CTkButton(
+        ppg_info_frame, text="Gravar CSV PPG", width=135, height=26,
+        command=toggle_ppg_csv)
+    ppg_csv_btn.pack(anchor="e", padx=12, pady=(2, 8))
+
+    ppg_fig = Figure(figsize=(8, 6.3), dpi=100)
+    ppg_grid = ppg_fig.add_gridspec(3, 1, height_ratios=(1.7, 0.95, 0.85))
+    ax_ppg = ppg_fig.add_subplot(ppg_grid[0])
+    ax_bpm = ppg_fig.add_subplot(ppg_grid[1], sharex=ax_ppg)
+    ax_spo2 = ppg_fig.add_subplot(ppg_grid[2], sharex=ax_ppg)
+    ppg_fig.patch.set_facecolor("#2b2b2b")
+    ppg_fig.subplots_adjust(hspace=0.24, left=0.11, right=0.96,
+                             top=0.96, bottom=0.085)
+    for optical_axis in (ax_ppg, ax_bpm, ax_spo2):
+        optical_axis.set_facecolor("#2b2b2b")
+        optical_axis.tick_params(axis="x", colors="white")
+        optical_axis.tick_params(axis="y", colors="white")
+        optical_axis.grid(True, color="#555555", linestyle=":", alpha=0.8)
+
+    # A vista mostra ~30 s; a qualidade ruim nao apaga medidas passadas.
+    ax_ppg.set_ylabel("PPG RAW (contagens)", color="white")
+    line_red, = ax_ppg.plot([], [], color="#ef4444", linewidth=1.6, label="RED")
+    line_ir, = ax_ppg.plot([], [], color="#38bdf8", linewidth=1.6, label="IR")
+    ax_ppg.legend(loc="upper right", facecolor="#2b2b2b",
+                  edgecolor="#555555", labelcolor="white", fontsize=9)
+
+    ax_bpm.set_ylabel("BPM", color="white")
+    ax_bpm.set_ylim(30, 205)
+    line_bpm, = ax_bpm.plot([], [], color="#a78bfa", linewidth=1.8,
+                            marker=".", markersize=3, label="FW qualificado")
+    line_bpm_exp, = ax_bpm.plot([], [], color="#fbbf24", linewidth=1.6,
+                                marker=".", markersize=3, label="Python EXP.")
+    ax_bpm.legend(loc="upper right", facecolor="#2b2b2b",
+                  edgecolor="#555555", labelcolor="white", fontsize=8)
+
+    # Leitura instantanea bem visivel, no canto do proprio grafico de FC.
+    # Sao fontes diferentes: nunca promover estimativa Python a valor firmware.
+    bpm_fw_corner = ax_bpm.text(
+        0.018, 0.96, "ESP32: -- BPM", transform=ax_bpm.transAxes,
+        va="top", ha="left", fontsize=12, fontweight="bold",
+        color="#a78bfa",
+        bbox=dict(facecolor="#202020", edgecolor="#555555",
+                  boxstyle="round,pad=0.35", alpha=0.93))
+    bpm_py_corner = ax_bpm.text(
+        0.018, 0.72, "Python EXP.: -- BPM", transform=ax_bpm.transAxes,
+        va="top", ha="left", fontsize=12, fontweight="bold",
+        color="#fbbf24",
+        bbox=dict(facecolor="#202020", edgecolor="#555555",
+                  boxstyle="round,pad=0.35", alpha=0.93))
+
+    ax_spo2.set_ylabel("SpO₂ EXP. (%)", color="white")
+    ax_spo2.set_xlabel("Tempo do dispositivo (s)", color="white")
+    ax_spo2.set_ylim(70, 101)
+    line_spo2_exp, = ax_spo2.plot([], [], color="#34d399",
+                                 linewidth=1.5, marker=".", markersize=3,
+                                 label="Não calibrada")
+    ax_spo2.legend(loc="upper right", facecolor="#2b2b2b",
+                   edgecolor="#555555", labelcolor="white", fontsize=8)
+
+    ppg_canvas = FigureCanvasTkAgg(ppg_fig, master=ppg_window)
+    ppg_canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    def update_ppg_plot(_frame):
+        """Compara FW e algoritmo Python sem executar calculos na thread Tk."""
+        if not app.is_ppg_plotting:
+            return line_red, line_ir, line_bpm, line_bpm_exp, line_spo2_exp
+
+        snap = ppg_monitor.snapshot()
+        history = snap["history"]
+        if history:
+            xs, red_values, ir_values = zip(*history)
+            line_red.set_data(xs, red_values)
+            line_ir.set_data(xs, ir_values)
+            xmax = xs[-1]
+            ax_ppg.set_xlim(xmax - 30.0, xmax + .25)
+            finite = [v for rec in history for v in rec[1:]
+                      if isinstance(v, (float, int)) and math.isfinite(v)]
+            if finite:
+                lo, hi = min(finite), max(finite)
+                pad = max(150.0, (hi - lo) * .12)
+                ax_ppg.set_ylim(max(0.0, lo - pad), hi + pad)
+        else:
+            line_red.set_data([], [])
+            line_ir.set_data([], [])
+
+        bpm_history = snap["bpm_history"]
+        if bpm_history:
+            line_bpm.set_data([x for x, _ in bpm_history],
+                              [b for _, b in bpm_history])
+        else:
+            line_bpm.set_data([], [])
+
+        experimental = snap["experimental"]
+        if experimental["bpm_history"]:
+            xs_py, ys_py = zip(*experimental["bpm_history"])
+            line_bpm_exp.set_data(xs_py, ys_py)
+        else:
+            line_bpm_exp.set_data([], [])
+        if experimental["spo2_history"]:
+            xs_spo2, ys_spo2 = zip(*experimental["spo2_history"])
+            line_spo2_exp.set_data(xs_spo2, ys_spo2)
+        else:
+            line_spo2_exp.set_data([], [])
+        optical_live = (snap["contact"] is True
+                        and snap["sample_age_s"] is not None
+                        and snap["sample_age_s"] < 2.0)
+        py_bpm = (f"{experimental['bpm']:.1f}"
+                  if optical_live and experimental["bpm"] is not None else "--")
+        py_ratio = (f"{experimental['ratio']:.3f}"
+                    if experimental["ratio"] is not None else "--")
+        spo2_text = (f"{experimental['spo2']:.1f}%"
+                     if optical_live and experimental["spo2"] is not None else "--")
+        ppg_exp_status_label.configure(
+            text=(f"BPM Python EXP.: {py_bpm} | R (diagnóstico): {py_ratio} | "
+                  f"Estado: {experimental['status']}"))
+        if snap["sample_age_s"] is None or snap["sample_age_s"] >= 2.0:
+            spo2_status_text = "SpO₂: -- | Sem amostras recentes"
+        elif snap["contact"] is not True:
+            spo2_status_text = "SpO₂: -- | SEM CONTATO — candidato DEMO oculto"
+        else:
+            spo2_status_text = (f"SpO₂ EXPERIMENTAL: {spo2_text} | "
+                                "NÃO CALIBRADA / NÃO VALIDADA — NÃO USAR CLINICAMENTE")
+        spo2_state_label.configure(text=spo2_status_text)
+
+        # O avaliador de qualidade nao decide se as formulas rodam.
+        # Mostrar as falhas sem apagar os historicos experimentais.
+        quality = experimental.get("quality") or {}
+        issues = quality.get("warnings") or []
+        if snap["sample_age_s"] is None or snap["sample_age_s"] >= 2:
+            quality_text = "TELEMETRIA PARADA: sem amostras recentes"
+        elif issues:
+            quality_text = "Qualidade (diagnóstico): " + " | ".join(issues[:4])
+            if len(issues) > 4:
+                quality_text += f" | +{len(issues)-4} avisos"
+        else:
+            quality_text = "Qualidade (diagnóstico): sem alertas nesta janela"
+        ppg_quality_label.configure(
+            text=quality_text,
+            text_color="#fbbf24" if issues or snap["sample_age_s"] is None
+                       or snap["sample_age_s"] >= 2 else "#34d399")
+
+        contact = {True: "presente", False: "ausente"}.get(snap["contact"], "--")
+        g1_state = {True: "PASS", False: "REPROVADO"}.get(snap["g1_effective"], "aguardando")
+        bpm_text = f"{snap['bpm']:.1f}" if snap["bpm"] is not None else "--"
+        ppg_bpm_fw_value.configure(text=f"ESP32: {bpm_text}")
+        ppg_bpm_py_value.configure(text=f"Python EXP.: {py_bpm}")
+        ppg_spo2_value.configure(text=spo2_text)
+
+        # Medias moveis separadas do instante: valores calculados por
+        # segundo, so com estimativas exibiveis e contato ainda presente.
+        mean60 = snap["mean60"]
+        fw_avg, py_avg, spo2_avg = (
+            mean60["bpm_fw"], mean60["bpm_py"], mean60["spo2"])
+        mean_visible = optical_live
+
+        def fmt_mean(metric, suffix=""):
+            value = metric["value"] if mean_visible else None
+            return f"{value:.1f}{suffix}" if value is not None else "--"
+
+        def mean_status(metric):
+            if not mean_visible:
+                return "Sem contato / telemetria"
+            seconds = metric["valid_seconds"]
+            if metric["status"] == "completa":
+                return f"Completa · {seconds}/60 s"
+            if metric["value"] is not None:
+                return f"Parcial · {seconds}/60 s"
+            return f"Aguardando · {seconds}/60 s"
+
+        ppg_bpm_fw_mean_value.configure(text=f"ESP32: {fmt_mean(fw_avg)}")
+        ppg_bpm_py_mean_value.configure(text=f"Python EXP.: {fmt_mean(py_avg)}")
+        bpm_status_label = (
+            ("Completa" if (fw_avg["status"] == "completa" and
+                             py_avg["status"] == "completa") else "Parcial")
+            if (fw_avg["value"] is not None or py_avg["value"] is not None)
+            else "Aguardando"
+        )
+        ppg_bpm_mean_status.configure(
+            text=(f"{bpm_status_label} · FW {fw_avg['valid_seconds']}s / "
+                  f"PY {py_avg['valid_seconds']}s")
+            if mean_visible else "Sem contato / telemetria")
+        ppg_spo2_mean_value.configure(text=fmt_mean(spo2_avg, "%"))
+        ppg_spo2_mean_status.configure(text=mean_status(spo2_avg))
+        ppg_spo2_value.configure(
+            text_color="#34d399" if experimental["spo2"] is not None
+                       else "#fbbf24")
+        bpm_fw_corner.set_text(f"ESP32: {bpm_text} BPM")
+        bpm_py_corner.set_text(
+            f"Python EXP.: {py_bpm} BPM")
+        ppg_state_label.configure(
+            text=(f"PPG {snap['source'] or '--'} | Contato: {contact} | "
+                  f"G1: {g1_state} (motivo {snap['reason']}) | "
+                  f"BPM FW: {bpm_text} | {snap['fw_bpm_status']}"))
+        ppg_stats_label.configure(
+            text=(f"Recebidas: {snap['samples']} | {snap['sample_rate']:.1f} Hz | "
+                  f"Perdas seq: {snap['missing']} | Duplicadas: {snap['duplicates']} | "
+                  f"Reinícios seq: {snap['seq_resets']} | "
+                  f"JSON inválido: {snap['invalid_json']} | "
+                  f"Janelas G1: {snap['g1_windows']} "
+                  f"(PASS {snap['g1_passes']}, falha {snap['g1_failures']}) | "
+                  f"Pressão: {snap['pressure_messages']} | "
+                  f"CSV descartadas: {snap['csv_dropped']}"))
+        ppg_canvas.draw()
+        return line_red, line_ir, line_bpm, line_bpm_exp, line_spo2_exp
+
+
+    # Apenas redesenho ~7 Hz. Coleta BLE/USB ocorre em outras threads.
+    ani_ppg = animation.FuncAnimation(ppg_fig, update_ppg_plot, interval=150,
+                                      blit=False, cache_frame_data=False)
+
+    return SimpleNamespace(
+        window=ppg_window,
+        csv_button=ppg_csv_btn,
+        toggle_ppg_csv=toggle_ppg_csv,
+        update_ppg_plot=update_ppg_plot,
+        animation=ani_ppg,
+    )
