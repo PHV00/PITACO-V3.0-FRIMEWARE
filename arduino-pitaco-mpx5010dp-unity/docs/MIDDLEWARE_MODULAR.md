@@ -83,15 +83,24 @@ foi removida. O campo `experimental.enabled=true` permanece no snapshot por
 compatibilidade de leitura, mas não existe controle para desativá-lo.
 
 O Python calcula com janela progressiva de ~3 a 8 segundos, atualizada
-aproximadamente a cada 400 ms. Para esta etapa de bancada, **não exige G1 PASS**
-para estimativa experimental, mas exige contato óptico, integridade temporal,
-periodicidade e amplitude/coerência suficientes. G1 pendente/reprovado fica
-visível como `SOMENTE DIAGNOSTICO`. Na ausência de condições adequadas
-aparecem `--` e lacunas; a SpO₂ não foi calibrada, não tem uso clínico
-e **não é enviada à Unity**.
+aproximadamente a cada 400 ms. **Contato e G1 são diagnósticos de qualidade,
+não gates de cálculo**. BPM depende da periodicidade IR e SpO₂ DEMO da razão
+RED/IR, de forma independente. DC/AC baixos, movimento e baixa coerência
+são alertas; condições matemáticas impossíveis continuam produzindo `--`.
+As lacunas não eliminam candidatos anteriores do histórico. A SpO₂ não foi
+calibrada, não tem uso clínico e **não é enviada à Unity**.
 
 A janela `Monitor Cardíaco / SpO₂` dispõe de **dois cartões no canto superior
 direito**: um com BPM atual do ESP32 e do Python experimental, outro com
 SpO₂ experimental instantânea. Todos mostram `--` quando indisponíveis.
 O firmware, o cálculo de BPM embarcado, os gráficos respiratórios, BLE/USB e
 CSV RAW permanecem inalterados por esta alteração.
+
+### Históricos e qualidade separados
+
+O painel traz status de qualidade distinto dos cartões BPM e SpO₂. O RAW
+passou de aproximadamente 12 para **30 segundos visíveis**, usando buffer
+de 850 pontos. O contador `Reinícios seq` permite detectar reinicialização
+do firmware. Os históricos BPM/SpO₂ não são apagados em perdas transitórias
+de contato, gaps ou reprovação G1; somente as leituras **atuais** podem
+ficar indisponíveis. Os dados RAW continuam disponíveis para exportação CSV.
