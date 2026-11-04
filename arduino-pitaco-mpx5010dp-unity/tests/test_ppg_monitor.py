@@ -154,6 +154,9 @@ class PpgMonitorTests(unittest.TestCase):
                           "oxi_sampling", "oximeter_command_loop",
                           "oximeter_game_port", "last_oxi_sent"):
             self.assertNotIn(forbidden, main_source)
+        self.assertNotIn("toggle_ppg_experiment", gui)
+        self.assertNotIn("ppg_experiment_checkbox", cardio_source)
+        self.assertNotIn("Calcular BPM e SpO₂ experimentais NO PYTHON", gui)
         for token in (
             "ppg_monitor.observe(msg, source=source)",
             'source="BLE"', 'source="USB"',
@@ -168,10 +171,8 @@ class PpgMonitorTests(unittest.TestCase):
             "ppg_fig = Figure(figsize=(8, 6.3), dpi=100)",
             "ax_bpm = ppg_fig.add_subplot(ppg_grid[1], sharex=ax_ppg)",
             "ani_ppg = animation.FuncAnimation",
-            "SpO₂: não calculada",
-            "toggle_ppg_experiment()",
-            "ppg_monitor.set_experimental_enabled(",
-            "Calcular BPM e SpO₂ experimentais NO PYTHON",
+            "SpO₂ EXPERIMENTAL: --",
+            "Cálculo experimental contínuo: aguardando G1 + contato",
             "line_bpm_exp.set_data(",
             "bpm_fw_corner.set_text(",
             "bpm_py_corner.set_text(",
