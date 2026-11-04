@@ -50,8 +50,9 @@ loop()
 ```
 
 A ordem das chamadas foi preservada, inclusive a prioridade de atendimento
-da FIFO durante a calibração de zero. O sensor PPG continua suspenso durante
-zero/OTA e sem contato, de acordo com a lógica original.
+da FIFO durante a calibracao de zero. O PPG fica suspenso durante
+zero/OTA, mas **continua adquirindo RAW sem dedo** quando a coleta esta
+ativa; a ausencia de contato invalida BPM e G1 efetivos.
 
 ## Por que SoC em abas `.ino` e viavel
 
