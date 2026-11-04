@@ -30,9 +30,10 @@ class GuiSplitTests(unittest.TestCase):
             self.assertIn(name, pneumo)
             self.assertNotIn(name, main)
         for name in ("create_oxy_and_cardio_view", "update_ppg_plot",
-                     "toggle_ppg_csv", "toggle_ppg_experiment"):
+                     "toggle_ppg_csv"):
             self.assertIn(name, cardio)
             self.assertNotIn(name, main)
+        self.assertNotIn("toggle_ppg_experiment", cardio)
         for name in ("ble_bridge", "start_bridge", "stop_bridge",
                      "process_pitaco_line", "send_ble_command", "open_graph",
                      "close_graph", "open_ppg_graph", "close_ppg_graph"):
