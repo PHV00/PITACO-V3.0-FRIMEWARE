@@ -181,12 +181,14 @@ já recebidas por USB ou BLE.
 A tentativa de cálculo ocorre a cada ~400 ms com janela progressiva:
 a primeira estimativa pode aparecer após aproximadamente 3 segundos de
 contato e dados contínuos; a janela móvel cresce até 8 segundos.
-O G1 deixa de bloquear **exclusivamente a estimativa Python de bancada**:
-se estiver pendente ou reprovado, o estado indica
-`SOMENTE DIAGNOSTICO`, não uma medição qualificada. O firmware continua
-exigindo G1 aprovado para aceitar seu BPM. Sem contato, com baixa AC,
-amostragem irregular ou sinal inutilizável, os indicadores mostram `--`
-e os gráficos mantêm lacunas, sem inventar valores.
+O G1 não bloqueia o cálculo Python de bancada: é exposto separadamente
+como **aviso de qualidade**, assim como contato, baixa AC, movimento
+suspeito e baixa coerência RED/IR. O firmware continua exigindo
+G1 aprovado para aceitar seu próprio BPM. BPM Python depende de periodicidade
+IR; SpO₂ DEMO depende da razão RED/IR e **não exige BPM Python válido**.
+Ambos podem existir como candidatos mesmo com G1 reprovado; isto não implica
+confiabilidade fisiológica. Limites matemáticos e da curva de demonstração
+continuam podendo deixar uma estimativa em `--`.
 Não altera GATT, firmware, sensor, Gate 01, pressão, CSV RAW ou Unity.
 
 **Apresentacao:** legenda `FW qualificado` (roxo) = BPM fornecido pelo
@@ -198,24 +200,25 @@ medição. SpO₂ experimental **não é dispositivo médico nem prova de precis
 
 ### Como o cálculo é feito (`pitaco_bridge/experimental.py`)
 
-1. Receber pares RED/IR e `t_ms` (~25 Hz); exigir contato óptico, amostras
-   válidas e amplitude plausível. **O G1 é exibido como diagnóstico, mas não
-   bloqueia a estimativa experimental Python**; sua rejeição nunca é tratada
-   como PASS. Amostras inválidas permanecem no RAW e CSV.
-2. Começar com pelo menos ~3 s contínuos (70 amostras e 3 s reais) e
-   expandir progressivamente até 8 s, testando continuidade, taxa de
-   amostragem e sinal óptico. O limite de autocorrelação `len(y)//3`
-   exige cerca de três períodos para a frequência estimada: ritmos mais
-   lentos precisam naturalmente de mais observação. Falha de contato,
-   timestamps inválidos ou gap de sequência reiniciam a janela.
+1. Receber pares RED/IR e `t_ms` (~25 Hz). **Contato e G1 são
+   metadados de qualidade**, não condições de aprovação das equações de
+   bancada. Uma transição de contato reinicia somente a janela móvel
+   para evitar mistura de trechos, preservando os resultados históricos.
+   RAW e CSV permanecem intocados.
+2. Formar janela progressiva com pelo menos ~3 s contínuos (70 amostras e
+   3 s reais), estendendo até 8 s. Gaps e timestamps impossíveis reiniciam
+   só a janela de cálculo, com marcador de lacuna no gráfico. O limite
+   de autocorrelação `len(y)//3` exige vários ciclos para BPM lento.
 3. Para cada canal, remover DC variável por média móvel centrada de
    aproximadamente 1 s e suavizar com 3 pontos para estimar componente AC.
 4. Estimar BPM pelo atraso de maior autocorrelação normalizada do IR
-   em 35–200 bpm; exigir regularidade (limiar experimental 0,57).
-5. Obter o índice de razão de razões
+   em 35–200 bpm; a periodicidade mínima de 0,57 evita selecionar um
+   atraso sem evidência de ritmo.
+5. Independentemente do BPM, estimar a razão
    `R = (RMS(RED_AC)/media(RED)) / (RMS(IR_AC)/media(IR))`.
-   Exigir coerência entre canais (correlação > 0,70) e descartar
-   grandes variações de nível óptico (>12% de DC na janela).
+   Coerência RED/IR baixa (<0,70), grande variação de DC (>12%), falta
+   de contato e G1 reprovado geram **avisos** visíveis, não falsos PASS.
+   Denominadores nulos e valores fora do domínio do modelo não geram SpO₂.
 6. Aplicar **somente para demonstração** a aproximação encontrada
    no exemplo Maxim/SparkFun:
    `SpO₂_demo = -45.060 × R² + 30.354 × R + 94.845`,
@@ -226,7 +229,7 @@ medição. SpO₂ experimental **não é dispositivo médico nem prova de precis
 
 A atualização ocorre a cada ~400 ms de telemetria; todo cálculo é no
 PC, independente do filtro do pneumógrafo, automaticamente durante a
-coleta com contato válido, sem botão de habilitação. O resultado experimental **não é transmitido à Unity**. Esta versão da ponte
+coleta com qualquer estado de G1/contato, sem botão de habilitação. O resultado experimental **não é transmitido à Unity**. Esta versão da ponte
 mantém somente a COM virtual de pressão/fluxo para o jogo respiratório.
 O monitor recebe RED/IR, BPM e SQI pelo JSON do ESP32, sem COM adicional.
 
@@ -278,9 +281,10 @@ O painel **Monitor Cardíaco / SpO₂** tem três gráficos de cima para baixo:
 básica de janela e contato, **não** comprova batimentos detectáveis.
 O firmware só emite BPM após detecções plausíveis de `checkForBeat`,
 janela G1 válida e batimento recente. O analisador Python é automático,
-dispensa o PASS de G1 apenas para **teste diagnóstico** e começa a estimar
-a partir de ~3 s conforme o ritmo; pode rejeitar baixa AC,
-irregularidade, incoerência RED/IR ou movimento.
+independente de G1 e contato para **teste diagnóstico**, começa a estimar
+a partir de ~3 s conforme o ritmo e calcula SpO₂ DEMO sem exigir BPM.
+Incoerência RED/IR, baixa AC e movimentos ficam expostos como alertas.
+Os resultados anteriores são preservados na memória limitada da sessão.
 A linha superior agora indica o motivo do firmware:
 `Aguardando G1`, `G1 reprovado`, `Sem contato`,
 `Firmware ainda sem BPM valido`, `BPM firmware valido` ou
@@ -290,3 +294,20 @@ O **índice R** é a variável intermediária do cálculo de SpO₂
 (`(AC_RED/DC_RED)/(AC_IR/DC_IR)`), e não a ordenada do gráfico central.
 Ele é mostrado junto do estado experimental quando disponível.
 Nenhum valor experimental é transmitido à Unity.
+
+## Separação de cálculo/qualidade e persistência visual (04/11/2026)
+
+- O algoritmo Python apresenta candidatos BPM e SpO₂ DEMO **independentes**,
+  quando seus respectivos critérios matemáticos permitem. Não há promoção
+  automática desses valores para o firmware, Unity ou segurança clínica.
+- O painel mostra uma linha **Qualidade (diagnóstico)** separada dos números:
+  contato, G1 e alertas de DC, AC, movimento e coerência são visíveis.
+- Ao faltar amostras/timestamp íntegro, a estimativa **atual** mostra `--`;
+  os pontos históricos não são apagados. A quebra gera uma lacuna, não uma
+  linha falsa para 0 bpm ou 0% de SpO₂.
+- A vista RAW agora exibe cerca de **30 segundos**, com 850 amostras na
+  memória da GUI. Se houver reinício real da sequência do dispositivo,
+  o monitor zera as séries RAW e BPM do firmware por sessão; o evento
+  aparece no indicador `Reinícios seq`.
+- O CSV original continua sendo a fonte de amostras brutas para análise
+  offline; os valores de SpO₂ são apenas diagnósticos e não calibrados.
