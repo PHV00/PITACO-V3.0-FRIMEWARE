@@ -168,10 +168,8 @@ class PpgMonitorTests(unittest.TestCase):
             "ppg_fig = Figure(figsize=(8, 6.3), dpi=100)",
             "ax_bpm = ppg_fig.add_subplot(ppg_grid[1], sharex=ax_ppg)",
             "ani_ppg = animation.FuncAnimation",
-            "SpO₂: não calculada",
-            "toggle_ppg_experiment()",
-            "ppg_monitor.set_experimental_enabled(",
-            "Calcular BPM e SpO₂ experimentais NO PYTHON",
+            "SpO₂ EXP.: --",
+            "BPM Python EXP.: --",
             "line_bpm_exp.set_data(",
             "bpm_fw_corner.set_text(",
             "bpm_py_corner.set_text(",
@@ -189,6 +187,9 @@ class PpgMonitorTests(unittest.TestCase):
             "CHARACTERISTIC_UUID"
         ):
             self.assertIn(token, gui)
+        self.assertNotIn("CTkCheckBox(", cardio_source)
+        self.assertNotIn("toggle_ppg_experiment", gui)
+        self.assertNotIn("set_experimental_enabled", gui)
 
 
 if __name__ == "__main__":
