@@ -14,7 +14,7 @@ A PR #4 que experimenta transmissão binária permanece separada.
 
 ## Fluxo de dados
 
-    MAX30102 + MPX5010DP -> ESP32-C3
+    MAX30105 (RED/IR) + MPX5010DP -> ESP32-C3
       ├── USB: linhas numericas de pressao + JSONL sample/g1
       └── BLE:
           ├── characteristic pressao/comandos 3bcdff27...9266
@@ -374,3 +374,12 @@ RAW na tela continua com aproximadamente 30 s (850 pontos), enquanto
 um buffer **independente de 1.800 leituras** guarda o BPM firmware para
 a média de 60 s. O analisador Python já conserva 300 estimativas
 (aproximadamente 120 s a cada 400 ms).
+
+## Proposta experimental: temperatura, perfusão e MAX30105
+
+Antes de reajustar thresholds de contato ou do G1, consultar
+[protocolo de ensaio de temperatura e perfusão periférica do MAX30105](MAX30105_TEMPERATURA_PERFUSAO_PROTOCOLO.md).
+O protocolo é exploratório, não altera esta implementação e distingue
+presença de contato, amplitude AC/DC, periodicidade cardíaca e estimativas
+experimentais de SpO₂. Não interpretar a melhora após aquecimento como prova
+de que a pigmentação da pele causou a falha de aquisição.
