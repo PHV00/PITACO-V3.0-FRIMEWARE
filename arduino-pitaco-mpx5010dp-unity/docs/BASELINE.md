@@ -1,38 +1,35 @@
 # PITACO 2.4 — baseline preservado
 
-## Arquitetura mínima e origem
+## Arquitetura vigente — SoC em abas `.ino`
 
-- **Firmware orquestrador:** arduino-pitaco-mpx5010dp-unity.ino. Preserva o MPX5010DP, o ADC de pressão, o filtro, a calibração, os comandos de operação, a saída USB numérica, o GATT BLE original e a OTA. Acrescenta MAX30105, RED/IR, detector de contato, BPM SparkFun experimental e JSONL.
-- **Gate 01:** gate_01_integrity.ino. Acumula estatísticas RED/IR sem transformar ou descartar o sinal. Ver [GATE_01.md](GATE_01.md).
-- **Ponte PC/Unity:** ble_client_mpx5010dp.py (GUI adaptada); pitaco24_protocol.py (parser e remontagem de notificações); pitaco24_ppg_probe.py (diagnóstico opcional, não faz parte do firmware).
-- **Legado preservado:** arquivos na pasta arduino-pitaco-ble/, características antigas de pressão, comandos e OTA. Não converter pressão calibrada em fluxo clínico sem validação.
-- **Testes mantidos:** tests/ e workflow .github/workflows/pitaco24-g1.yml. São proteção contra regressões, não lixo de bancada.
+O firmware autoral foi reorganizado por **Separation of Concerns**. A pasta do
+sketch agora contem um arquivo principal de orquestracao e abas de PPG,
+respiracao, BLE/OTA, comandos, BPM, contato/SQI e JSON. O Arduino concatena
+essas abas em uma so unidade C++, mantendo o comportamento do baseline;
+elas **nao sao bibliotecas independentes**.
 
-## Responsabilidade de cada função do orquestrador
+**Mapa de responsabilidades e limitacoes:** [SOC_INO_TABS.md](SOC_INO_TABS.md).
+**G1 e parametros:** [GATE_01.md](GATE_01.md).
+**USB/BLE:** [BLE_USB.md](BLE_USB.md).
 
-| Função ou callback | O que faz |
+| Arquivo | Responsabilidade |
 | --- | --- |
-| setup | Inicializa Serial, ADC, BLE (pressão, OTA e PPG), advertising e MAX30105 |
-| loop | Processa comandos USB, FIFO do PPG, zero e pressão MPX na cadência existente |
-| MyServerCallbacks.onConnect/onDisconnect | Marca conexão BLE e reinicia advertising quando desconecta |
-| MyCallbacks.onWrite | Recebe comando escrito na characteristic BLE de pressão |
-| OtaControlCallbacks.onWrite | Inicia, finaliza/reinicia ou aborta OTA (0x01/0x02/0x03) |
-| OtaDataCallbacks.onWrite | Grava blocos OTA com Update.write durante atualização |
-| ListenCommand | Comandos originais: e/echop e parada; r/início; f/parada; c/calibração curta; z/zero 10 s |
-| SendStatus | Envia status ao USB e, conectado, à characteristic antiga |
-| voutToPa | ADC do MPX, divisor resistivo e conversão experimental para Pa |
-| ReadRawPressurePa | Filtro média móvel/EMA antes de offset e deadband |
-| Calibrate | Offset inicial provisório 100 Pa ou referência lida por comando c |
-| ResetPressureFilter | Recomeça o estado do filtro após referência nova |
-| StartTenSecondZero | Inicia amostragem da referência durante 10 s |
-| PollTenSecondZero | Amostra sem filtro a cada 50 ms e atualiza offset com amostras suficientes |
-| ResetPpgContact | Zera confirmação de contato óptico |
-| InitMAX30105 | Configura I2C, LED RED/IR e FIFO; mantém sensor parado antes de r |
-| PollMAX30105 | Estados STOPPED/COLLECTING, FIFO, contato, BPM, publicação RAW, avaliação G1 e recuperação de erros |
-| SendPpgJson | Envia JSONL completo por USB e até 20 bytes por notificação BLE |
-| SendG1Json | Monta e transmite evento periódico da janela G1 |
+| `arduino-pitaco-mpx5010dp-unity.ino` | `setup`, `loop`, estado compartilhado e constantes |
+| `pitaco_commands.ino` | `ListenCommand`, comandos e/r/f/c/z |
+| `pitaco_ble_ota.ino` | `InitBleCommunication`, callbacks GATT/OTA e transmissao USB/BLE |
+| `pitaco_respiration.ino` | `PollPressureSampling`, ADC MPX5010DP, filtros, zero/calibracao |
+| `pitaco_ppg_sensor.ino` | `InitMAX30105`, `PollMAX30105`, FIFO64, erros e I2C |
+| `pitaco_ppg_contact_sqi.ino` | Contato optico e fechamento da janela G1 |
+| `gate_01_integrity.ino` | Estatisticas e razoes de falha G1 |
+| `pitaco_ppg_bpm.ino` | `checkForBeat`, RR e BPM experimental |
+| `pitaco_ppg_json.ino` | JSONL dos pares RED/IR e eventos G1 |
 
-Os dois arquivos .ino continuam sendo o firmware; os documentos não introduzem bibliotecas, camadas ou processamento redundantes.
+O driver SparkFun **vendorizado** `src/vendor_sparkfun_max3010x/*.h/.cpp`
+nao foi alterado nem renomeado; continua necessario para FIFO64 e BPM.
+A interface Python reside em `pitaco_bridge/gui/`, e nao exige segunda
+COM virtual para o oximetro. Codigo de pesquisa offline em
+`pitaco_bridge/ppg_validation_25hz.py` tambem permanece independente do
+sketch ESP32.
 
 ## Configuração vigente — não modificar sem novo ensaio
 
@@ -64,4 +61,4 @@ Depois de salvar cópias, remover apenas capturas locais conhecidas com:
 - ESP32-C3: arduino-cli compile --fqbn esp32:esp32:esp32c3 arduino-pitaco-mpx5010dp-unity
 - Revisar CI do pull request e ensaiar USB/BLE em hardware, especialmente throughput BLE sob carga.
 
-Este commit altera apenas documentação, comentários no código e regras de ignore; nenhuma função, parâmetro, limite, mensagem ou comportamento runtime foi alterado.
+Esta refatoração muda a organização física das funções entre abas .ino. Os algoritmos, constantes e contratos permanecem previstos como invariantes; a equivalência operacional precisa ser confirmada em hardware após o CI.
