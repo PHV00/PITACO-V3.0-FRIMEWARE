@@ -60,6 +60,13 @@ def create_oxy_and_cardio_view(app):
         anchor="w", justify="left", wraplength=450)
     ppg_exp_status_label.pack(fill="x", pady=(0, 2))
 
+    ppg_quality_label = ctk.CTkLabel(
+        ppg_status_frame,
+        text="Qualidade separada: aguardando amostras",
+        font=("Segoe UI", 11, "bold"), text_color="#9ca3af",
+        anchor="w", justify="left", wraplength=450)
+    ppg_quality_label.pack(fill="x", pady=(2, 0))
+
     ppg_metric_bpm = ctk.CTkFrame(
         ppg_metrics_frame, fg_color="#111827", border_color="#475569",
         border_width=1, corner_radius=8, width=172, height=94)
@@ -145,6 +152,7 @@ def create_oxy_and_cardio_view(app):
         optical_axis.tick_params(axis="y", colors="white")
         optical_axis.grid(True, color="#555555", linestyle=":", alpha=0.8)
 
+    # A vista mostra ~30 s; a qualidade ruim nao apaga medidas passadas.
     ax_ppg.set_ylabel("PPG RAW (contagens)", color="white")
     line_red, = ax_ppg.plot([], [], color="#ef4444", linewidth=1.6, label="RED")
     line_ir, = ax_ppg.plot([], [], color="#38bdf8", linewidth=1.6, label="IR")
@@ -199,7 +207,7 @@ def create_oxy_and_cardio_view(app):
             line_red.set_data(xs, red_values)
             line_ir.set_data(xs, ir_values)
             xmax = xs[-1]
-            ax_ppg.set_xlim(xmax - 12.0, xmax + .25)
+            ax_ppg.set_xlim(xmax - 30.0, xmax + .25)
             finite = [v for rec in history for v in rec[1:]
                       if isinstance(v, (float, int)) and math.isfinite(v)]
             if finite:
@@ -241,6 +249,23 @@ def create_oxy_and_cardio_view(app):
             text=(f"SpO₂ EXPERIMENTAL: {spo2_text} | "
                   "NÃO CALIBRADA / NÃO VALIDADA — NÃO USAR CLINICAMENTE"))
 
+        # O avaliador de qualidade nao decide se as formulas rodam.
+        # Mostrar as falhas sem apagar os historicos experimentais.
+        quality = experimental.get("quality") or {}
+        issues = quality.get("warnings") or []
+        if snap["sample_age_s"] is None or snap["sample_age_s"] >= 2:
+            quality_text = "TELEMETRIA PARADA: sem amostras recentes"
+        elif issues:
+            quality_text = "Qualidade (diagnóstico): " + " | ".join(issues[:4])
+            if len(issues) > 4:
+                quality_text += f" | +{len(issues)-4} avisos"
+        else:
+            quality_text = "Qualidade (diagnóstico): sem alertas nesta janela"
+        ppg_quality_label.configure(
+            text=quality_text,
+            text_color="#fbbf24" if issues or snap["sample_age_s"] is None
+                       or snap["sample_age_s"] >= 2 else "#34d399")
+
         contact = {True: "presente", False: "ausente"}.get(snap["contact"], "--")
         g1_state = {True: "PASS", False: "REPROVADO"}.get(snap["g1_effective"], "aguardando")
         bpm_text = f"{snap['bpm']:.1f}" if snap["bpm"] is not None else "--"
@@ -257,6 +282,7 @@ def create_oxy_and_cardio_view(app):
         ppg_stats_label.configure(
             text=(f"Recebidas: {snap['samples']} | {snap['sample_rate']:.1f} Hz | "
                   f"Perdas seq: {snap['missing']} | Duplicadas: {snap['duplicates']} | "
+                  f"Reinícios seq: {snap['seq_resets']} | "
                   f"JSON inválido: {snap['invalid_json']} | "
                   f"Janelas G1: {snap['g1_windows']} "
                   f"(PASS {snap['g1_passes']}, falha {snap['g1_failures']}) | "
