@@ -311,3 +311,32 @@ Nenhum valor experimental é transmitido à Unity.
   aparece no indicador `Reinícios seq`.
 - O CSV original continua sendo a fonte de amostras brutas para análise
   offline; os valores de SpO₂ são apenas diagnósticos e não calibrados.
+
+## Correção: candidato matemático x valor exibido sem contato (04/11/2026)
+
+A curva Maxim/SparkFun usada por `estimate_experimental` é apenas uma
+**aproximação demonstrativa não calibrada**. A presença de uma razão R
+numérica NÃO comprova presença de dedo ou SpO₂: ruído no LED RED/IR pode
+produzir valores plausíveis, inclusive próximos de 95–100%.
+
+O `ExperimentalPpgAnalyzer` preserva agora os valores internos
+`bpm_candidate` e `spo2_candidate` mesmo para experimentos sem contato.
+Porém, os campos públicos da interface `bpm` e `spo2` são `None`
+quando `sqi.contact` não é `true` ou os valores ópticos instantâneos
+estão abaixo do mínimo de bancada (RED/IR < 5000). No caso da SpO₂,
+também se suprime a **apresentação** se as amplitudes AC são pequenas ou
+RED/IR são incoerentes; a fórmula bruta e seus avisos continuam disponíveis.
+**O Gate 01 não bloqueia o cálculo Python nem substitui a condição de contato.**
+
+A GUI deve exibir `SpO₂: -- | SEM CONTATO — candidato DEMO oculto`
+na ausência de dedo; ao voltar o contato, o buffer de estimativa recomeça
+e leva cerca de 3 s para produzir nova estimativa. Os pontos anteriores
+do gráfico são preservados, com lacuna explícita durante a ausência do dedo.
+A medição BPM qualificada do ESP32 segue inalterada, e nenhuma SpO₂ é
+transmitida para a Unity.
+
+O arquivo de bancada analisado em 04/11/2026 tinha 600 amostras em
+aproximadamente 24 s, `contact=false` e G1 reprovado em toda a captura,
+RED médio ~1418 e IR médio ~1007. Isso explica por que nenhum valor
+de SpO₂ deve ser exibido nessa janela. O CSV individual não é armazenado
+no repositório.
