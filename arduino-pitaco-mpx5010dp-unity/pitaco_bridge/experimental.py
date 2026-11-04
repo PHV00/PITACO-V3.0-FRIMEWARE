@@ -75,94 +75,143 @@ def _acf_bpm(ir_ac, fs):
 
 
 def estimate_experimental(rows):
-    """Recebe tuplas (t_ms,red,ir) consecutivas e retorna diagnostico isolado.
+    """Calcula candidatos independentes de G1, contato e da aprovacao SQI.
 
-    Rejeita falta de continuidade, baixa perfusao optica aparente,
-    artefatos de movimento grossos e pulsos nao periodicos.
-    Este e um prototipo para comparar com referencias, NAO um SQI clinico.
+    O BPM vem da periodicidade IR; a SpO2 DEMO vem de RED/IR e pode existir
+    mesmo sem BPM. Os alertas avaliam qualidade, mas nao sao gates de calculo.
+    Condicoes matematicas (janela, amostras finitas, denominadores e dominio
+    da curva DEMO) continuam necessarias. NAO e uma medida clinica.
     """
     result = dict(bpm=None, spo2=None, ratio=None, periodicity=None,
-                  cross_corr=None, fs=None, status="Aguardando janela (min. 3 s)")
+                  cross_corr=None, fs=None, warnings=[],
+                  status="Aguardando janela (min. 3 s)")
     if len(rows) < MIN_WINDOW_SAMPLES or rows[-1][0] - rows[0][0] < MIN_WINDOW_MS:
         return result
+
     ts, reds, irs = zip(*rows)
-    dts = [(b-a)/1000.0 for a,b in zip(ts, ts[1:])]
+    if not all(isinstance(v, (int, float)) and math.isfinite(v)
+               for values in (ts, reds, irs) for v in values):
+        result["status"] = "Amostra nao numerica/infinita"
+        return result
+    dts = [(b-a)/1000.0 for a, b in zip(ts, ts[1:])]
     if any(dt <= 0 or dt > 0.10 for dt in dts):
         result["status"] = "Intervalo de amostragem irregular"
         return result
     fs = 1.0 / statistics.median(dts)
     result["fs"] = round(fs, 2)
-    if not 20 <= fs <= 30 or abs((len(rows)-1)/(ts[-1]-ts[0])*1000 - fs) > 2:
+    effective_fs = (len(rows)-1) / ((ts[-1]-ts[0])/1000.0)
+    if not 20 <= fs <= 30 or abs(effective_fs - fs) > 2:
         result["status"] = "Taxa de amostragem insuficiente"
         return result
-    red_dc, ir_dc = statistics.fmean(reds), statistics.fmean(irs)
-    if red_dc < 5000 or ir_dc < 5000 or max(reds) > ADC_MAX-2048 or max(irs) > ADC_MAX-2048:
-        result["status"] = "Sem sinal optico util"
+
+    # Amostras fora da faixa ADC e DC nulo nao permitem razao de razoes.
+    if (min(reds) < 0 or min(irs) < 0 or
+            max(reds) > ADC_MAX or max(irs) > ADC_MAX):
+        result["status"] = "Amostras ADC fora da escala"
         return result
-    # Variação acima de 12% do DC nesta janela e indicio de movimento/retirada.
+    red_dc, ir_dc = statistics.fmean(reds), statistics.fmean(irs)
+    if red_dc <= 0 or ir_dc <= 0:
+        result["status"] = "DC optico nulo: razao indefinida"
+        return result
+
+    warnings = result["warnings"]
+    if red_dc < 5000 or ir_dc < 5000:
+        warnings.append("DC optico baixo")
+    if max(reds) >= ADC_MAX-2048 or max(irs) >= ADC_MAX-2048:
+        warnings.append("Proximo da saturacao ADC")
     if ((max(reds)-min(reds))/red_dc > .12 or
             (max(irs)-min(irs))/ir_dc > .12):
-        result["status"] = "Artefato optico amplo"
-        return result
+        warnings.append("Variacao optica ampla (possivel movimento)")
+
     red_ac = _ac_signal(reds, max(3, round(fs/2)))
     ir_ac = _ac_signal(irs, max(3, round(fs/2)))
     red_rms, ir_rms = _rms(red_ac), _rms(ir_ac)
-    if red_rms/red_dc < 0.0002 or ir_rms/ir_dc < 0.0002:
-        result["status"] = "AC pulsátil muito baixa"
-        return result
-    bpm, periodicity = _acf_bpm(ir_ac, fs)
-    result["periodicity"] = round(periodicity, 3)
-    if bpm is None:
-        result["status"] = "Batimentos nao periodicos"
-        return result
-    result["bpm"] = bpm
+    if red_rms/red_dc < 0.0002:
+        warnings.append("AC RED baixa")
+    if ir_rms/ir_dc < 0.0002:
+        warnings.append("AC IR baixa")
 
-    red_mu, ir_mu = statistics.fmean(red_ac), statistics.fmean(ir_ac)
-    red_centered = [x-red_mu for x in red_ac]
-    ir_centered = [x-ir_mu for x in ir_ac]
-    cross = sum(x*y for x,y in zip(red_centered, ir_centered))
-    denom = math.sqrt(sum(x*x for x in red_centered) *
-                      sum(y*y for y in ir_centered))
-    cross_corr = cross/denom if denom else 0.0
-    result["cross_corr"] = round(cross_corr, 3)
-    if cross_corr < 0.7:
-        result["status"] = "BPM exp; RED/IR incoerentes para R"
-        return result
+    # BPM e SpO2 independentes: ausencia de periodicidade NAO bloqueia R.
+    if ir_rms > 1e-9:
+        bpm, periodicity = _acf_bpm(ir_ac, fs)
+        result["bpm"] = bpm
+        result["periodicity"] = round(periodicity, 3)
+    if result["bpm"] is None:
+        warnings.append("IR sem periodicidade BPM suficiente")
 
-    ratio = (red_rms/red_dc) / (ir_rms/ir_dc)
-    result["ratio"] = round(ratio, 4)
-    if not 0.2 <= ratio <= 1.4:
-        result["status"] = "BPM exp; indice R fora do dominio demo"
-        return result
-    # Curva demonstrativa do exemplo Maxim/SparkFun, NAO calibracao do PITACO.
-    value = -45.060 * ratio**2 + 30.354 * ratio + 94.845
-    if not 70 <= value <= 100:
-        result["status"] = "BPM exp; SpO2 demo fora do dominio"
-        return result
-    result["spo2"] = round(value, 1)
-    result["status"] = "DEMONSTRACAO NAO VALIDADA"
+    if red_rms > 1e-9 and ir_rms > 1e-9:
+        red_mu, ir_mu = statistics.fmean(red_ac), statistics.fmean(ir_ac)
+        red_centered = [x-red_mu for x in red_ac]
+        ir_centered = [x-ir_mu for x in ir_ac]
+        cross = sum(x*y for x,y in zip(red_centered, ir_centered))
+        denom = math.sqrt(sum(x*x for x in red_centered) *
+                          sum(y*y for y in ir_centered))
+        corr = cross/denom if denom else 0.0
+        result["cross_corr"] = round(corr, 3)
+        if corr < .7:
+            warnings.append("Baixa coerencia RED/IR")
+
+        ratio = (red_rms/red_dc) / (ir_rms/ir_dc)
+        result["ratio"] = round(ratio, 4)
+        if .2 <= ratio <= 1.4:
+            # Curva de exemplo Maxim/SparkFun: DEMO, nunca calibracao PITACO.
+            demo = -45.060 * ratio**2 + 30.354 * ratio + 94.845
+            if 70 <= demo <= 100:
+                result["spo2"] = round(demo, 1)
+            else:
+                warnings.append("SpO2 fora da faixa da curva DEMO")
+        else:
+            warnings.append("Indice R fora do dominio DEMO")
+    else:
+        warnings.append("R indefinido: AC RED ou IR nula")
+
+    if result["bpm"] is not None or result["spo2"] is not None:
+        result["status"] = "DEMONSTRACAO NAO VALIDADA"
+    else:
+        result["status"] = "Sem estimativa matematica (ver qualidade)"
     return result
 
 
 class ExperimentalPpgAnalyzer:
-    """Analisador automatico por sessao, independente da Unity."""
+    """Analisador automatico de bancada; qualidade separada da estimativa."""
+
     def __init__(self):
         self.rows = deque(maxlen=300)
         self.bpm_history = deque(maxlen=300)
         self.spo2_history = deque(maxlen=300)
         self.last_calc_ms = None
+        self.last_contact = None
+        self._window_ok = False
         self.result = self._empty()
 
     def _empty(self, status="Aguardando sinal / contato"):
         return dict(bpm=None, spo2=None, ratio=None, periodicity=None,
-                    cross_corr=None, fs=None, status=status)
+                    cross_corr=None, fs=None, warnings=[], status=status,
+                    quality=dict(g1=None, contact=None, warnings=[]))
 
     def reset(self):
+        """Somente no inicio de nova sessao explicita; nunca por G1 ruim."""
         self.rows.clear()
         self.bpm_history.clear()
         self.spo2_history.clear()
         self.last_calc_ms = None
-        self.result = self._empty("Aguardando sinal / contato")
+        self.last_contact = None
+        self._window_ok = False
+        self.result = self._empty()
+
+    def _mark_break(self, t_ms, status, contact, g1):
+        """Quebra a janela de calculo, NAO apaga series ja calculadas."""
+        self.rows.clear()
+        self.last_calc_ms = None
+        self.result = self._empty(status)
+        self.result["quality"] = dict(
+            g1=g1, contact=contact, warnings=[status])
+        # Uma unica lacuna por interrupcao: nao inundar o historico com
+        # None por cada amostra de sinal ruim.
+        if self._window_ok and isinstance(t_ms, (int, float)) and math.isfinite(t_ms):
+            self.bpm_history.append((t_ms/1000.0, None))
+            self.spo2_history.append((t_ms/1000.0, None))
+        self._window_ok = False
 
     def observe(self, msg, gap=False):
         if msg.get("type") != "sample":
@@ -171,38 +220,52 @@ class ExperimentalPpgAnalyzer:
         ppg = msg.get("ppg") or {}
         sqi = msg.get("sqi") or {}
         red, ir = ppg.get("red"), ppg.get("ir")
-        # G1 e informativo apenas neste monitor de bancada: a estimativa
-        # pode surgir antes da primeira janela G1 (5 s), sem ganhar status
-        # de dado qualificado. Contato, amplitude e continuidade seguem obrigatorios.
-        good = (sqi.get("contact") is True
-                and isinstance(t_ms, (int, float))
-                and isinstance(red, (int, float)) and isinstance(ir, (int, float))
-                and all(math.isfinite(v) for v in (t_ms, red, ir))
-                and 5000 <= red < ADC_MAX-2048
-                and 5000 <= ir < ADC_MAX-2048)
-        if gap or not good or (self.rows and
-                (t_ms <= self.rows[-1][0] or t_ms-self.rows[-1][0] > 100)):
-            self.rows.clear()
-            self.last_calc_ms = None
-            self.result = self._empty("Sem contato/sinal ou gap: sem estimativa")
-            if isinstance(t_ms, (int, float)):
-                self.bpm_history.append((t_ms/1000.0, None))
-                self.spo2_history.append((t_ms/1000.0, None))
-            if not good or gap:
+        contact, g1 = sqi.get("contact"), sqi.get("g1")
+        numeric = (all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                       and math.isfinite(v) for v in (t_ms, red, ir))
+                   and 0 <= red <= ADC_MAX and 0 <= ir <= ADC_MAX)
+        transition = (self.last_contact is not None and
+                      contact is not self.last_contact)
+        self.last_contact = contact
+        irregular = bool(self.rows and
+                         (t_ms <= self.rows[-1][0] or
+                          t_ms-self.rows[-1][0] > 100)) if numeric else False
+
+        if gap or not numeric or irregular or transition:
+            reason = ("Gap de sequencia/timestamp" if gap or irregular else
+                      "Amostra fora da escala" if not numeric else
+                      "Transicao de contato")
+            self._mark_break(t_ms, reason, contact, g1)
+            if gap or not numeric or transition:
                 return
+
+        # O contato e o G1 sao apenas etiquetas de qualidade. A coleta
+        # experimental prossegue ate com G1 reprovado ou contato ausente.
         self.rows.append((t_ms, red, ir))
+        self._window_ok = True
         while self.rows and t_ms-self.rows[0][0] > WINDOW_MS:
             self.rows.popleft()
+
         if self.last_calc_ms is None or t_ms-self.last_calc_ms >= PERIOD_MS:
             self.last_calc_ms = t_ms
             self.result = estimate_experimental(list(self.rows))
-            if sqi.get("g1") is not True:
-                gate_state = "reprovado" if sqi.get("g1") is False else "pendente"
-                self.result["status"] += f" | G1 {gate_state}: SOMENTE DIAGNOSTICO"
             self.bpm_history.append((t_ms/1000.0, self.result["bpm"]))
             self.spo2_history.append((t_ms/1000.0, self.result["spo2"]))
 
+        # Qualidade NAO interfere nos resultados numericos. Expor cada
+        # criterio separadamente para comparar estimativas com/sem G1.
+        flags = list(self.result["warnings"])
+        if contact is not True:
+            flags.insert(0, "Contato ausente/desconhecido")
+        if g1 is not True:
+            flags.insert(0, "G1 reprovado" if g1 is False else "G1 pendente")
+        self.result["quality"] = dict(
+            g1=g1, contact=contact, warnings=flags)
+
     def snapshot(self):
         return dict(self.result, enabled=True,
+                    warnings=list(self.result["warnings"]),
+                    quality=dict(self.result["quality"],
+                                 warnings=list(self.result["quality"]["warnings"])),
                     bpm_history=list(self.bpm_history),
                     spo2_history=list(self.spo2_history))
