@@ -115,3 +115,19 @@ a SpO₂ também requer AC e coerência dos canais suficientes para exibição.
 Sem contato a interface mostra `--` e mantém o histórico anterior.
 O retorno do dedo reinicia somente a janela móvel; o firmware não é
 alterado, e a SpO₂ demonstrativa continua não calibrada e não clínica.
+
+### Quatro indicadores superiores — médias móveis de 60 s
+
+O painel `oxy_and_cardio_view.py` mantém BPM atual (ESP32/Python) e SpO₂
+experimental atual. Adiciona, ao lado, BPM médio (ESP32/Python separados)
+e SpO₂ média experimental, em um grid 2x2. Ambos os indicadores médios
+usam o modelo compartilhado `PpgMonitor.snapshot()["mean60"]`.
+
+O `pitaco_bridge/monitor.py` calcula a média por segundo dos valores
+válidos exibíveis nos últimos 60 segundos, com cobertura e estado
+parcial/completa. O firmware requer retenção independente para a média
+(`bpm_mean_history`, 1800 pontos) já que a vista RAW guarda apenas
+aproximadamente 30 s. Os dois históricos Python já têm retenção suficiente.
+G1 permanece diagnóstico no Python e critério de validade no ESP32.
+Sem contato, desconexão, perda de amostras ou nova colocação de dedo,
+a média corrente não reutiliza a sessão anterior.
