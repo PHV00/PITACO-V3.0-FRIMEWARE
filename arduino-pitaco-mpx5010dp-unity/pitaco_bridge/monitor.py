@@ -162,11 +162,6 @@ class PpgMonitor:
             self.bpm = None
             self.fw_bpm_status = "Aguardando leitura PPG"
 
-    def set_experimental_enabled(self, enabled):
-        """Chave do testador PC; nao altera firmware, RAW ou Unity."""
-        with self._lock:
-            self.experimental.set_enabled(enabled)
-
     def note_ble_fragment(self):
         with self._lock:
             self.ble_fragments += 1
@@ -294,8 +289,7 @@ class PpgMonitor:
             out["fw_bpm_status"] = "Sem amostras recentes"
         # Telemetria interrompida nao pode manter valores experimentais atuais.
         # Historicos ficam disponiveis para diagnostico (nenhum RAW apagado).
-        if out["experimental"]["enabled"] and (
-                sample_age is None or sample_age >= 2.0):
+        if sample_age is None or sample_age >= 2.0:
             out["experimental"].update(
                 bpm=None, spo2=None, ratio=None,
                 status="Sem amostras recentes")
