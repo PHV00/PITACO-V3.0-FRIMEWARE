@@ -5,8 +5,9 @@
 #include <Update.h>
 #include <math.h>
 #include <Wire.h>
-#include <MAX30105.h>
-#include "heartRate.h"  // SparkFun: checkForBeat(IR)
+// Driver SparkFun local: buffer 64 slots e leitura FIFO protegida.
+#include "src/vendor_sparkfun_max3010x/MAX30105.h"
+#include "src/vendor_sparkfun_max3010x/heartRate.h" // checkForBeat(IR)
 #include <stdint.h>
 
 // Gate 01 fica na segunda aba .ino; firmware respiratorio permanece central.
@@ -587,6 +588,12 @@ void PollMAX30105() {
     // COLLECTING: preparar a FIFO ainda em shutdown. No teste de bancada,
     // zerar ovf=31 enquanto parado funcionou; enquanto ativo nao funcionou.
     max30105.clearFIFO();
+    // Diagnostico do driver efetivamente linkado, emitido a cada inicio
+    // de sessao. Nao altera FIFO, BPM, G1 ou o JSON de amostras.
+    const uint8_t swSlots = max30105.getSoftwareBufferCapacity();
+    Serial.printf("X,PPG_DRIVER,impl=vendor_safe_fifo,sw_slots=%u,sw_usable=%u\n",
+                  (unsigned)swSlots,
+                  (unsigned)(swSlots > 0 ? swSlots - 1 : 0));
     const uint8_t preOvf = max30105.readRegister8(0x57, 0x05);
     const uint8_t preWr = max30105.getWritePointer();
     const uint8_t preRd = max30105.getReadPointer();
@@ -640,17 +647,25 @@ void PollMAX30105() {
     Serial.printf("X,PPG_FIFO_OVERFLOW,ovf=%u\n", (unsigned)ovf);
   }
 
-  // A SparkFun ainda possui um buffer circular de apenas 4 posicoes.
+  // A versao local da SparkFun le em blocos inteiros, ate a capacidade livre
+  // do anel de 64 slots (63 utilizaveis), sem sobrescrever amostras pendentes.
   const uint16_t novos = max30105.check();
+  const bool fifoReadError = max30105.takeFIFOReadError();
   const uint8_t disponiveis = max30105.available();
   ppgDiagFound += novos;
+  if (fifoReadError) {
+    // Uma leitura I2C truncada nao pode virar amostra nem G1 PASS.
+    g1MarkAcquisitionGap();
+    Serial.println("X,PPG_I2C_FIFO_READ_ERROR");
+  }
 
   if (novos > disponiveis) {
     // O check() leu mais do que o anel interno conseguiu preservar.
     // Registra perda explicitamente para evitar falsos PASS do Gate 01.
     g1MarkAcquisitionGap();
-    Serial.printf("X,PPG_SW_RING_OVERRUN,novas=%u,disponiveis=%u\n",
-                  (unsigned)novos, (unsigned)disponiveis);
+    Serial.printf("X,PPG_SW_RING_OVERRUN,novas=%u,disponiveis=%u,sw_slots=%u\n",
+                  (unsigned)novos, (unsigned)disponiveis,
+                  (unsigned)max30105.getSoftwareBufferCapacity());
   }
 
   while (max30105.available()) {
@@ -755,7 +770,8 @@ void PollMAX30105() {
     ++ppgDiagProcessed;
   }
 
-  if (ovf > 0) {
+  if (ovf > 0 || fifoReadError) {
+    // Overflow fisico OU transferencia I2C incompleta exigem re-sincronizacao.
     // Somente depois de tentar processar os registros acessiveis.
     // Nao limpar continuamente: desligar conversoes, resetar FIFO e
     // confirmar os registradores antes de voltar a adquirir.
