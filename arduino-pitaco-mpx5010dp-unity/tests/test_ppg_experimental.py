@@ -101,14 +101,68 @@ class ExperimentalPpgTests(unittest.TestCase):
             good.observe(msg(i, t, red, ir, contact=True, g1=True))
             bad.observe(msg(i, t, red, ir, contact=False, g1=False))
         g, b = good.snapshot(), bad.snapshot()
-        self.assertEqual(g["bpm"], b["bpm"])
-        self.assertEqual(g["spo2"], b["spo2"])
-        self.assertIsNotNone(b["bpm"])
-        self.assertIsNotNone(b["spo2"])
+        # A formula continua rodando no sinal sem contato, mas o usuario
+        # NAO recebe uma falsa leitura atual nos cartoes ou graficos.
+        self.assertEqual(g["bpm"], b["bpm_candidate"])
+        self.assertEqual(g["spo2"], b["spo2_candidate"])
+        self.assertIsNotNone(g["bpm"])
+        self.assertIsNotNone(g["spo2"])
+        self.assertIsNone(b["bpm"])
+        self.assertIsNone(b["spo2"])
+        self.assertEqual(b["spo2_history"][-1][1], None)
         self.assertEqual(b["quality"]["contact"], False)
         self.assertEqual(b["quality"]["g1"], False)
         self.assertIn("Contato ausente/desconhecido", b["quality"]["warnings"])
         self.assertIn("G1 reprovado", b["quality"]["warnings"])
+
+    def test_no_finger_cannot_generate_display_spo2_even_if_formula_does(self):
+        # Niveis de DC equivalentes aos sinais sem contato do ensaio:
+        # RED ~1418 e IR ~1007, com ruido periodico artificial.
+        analyser = ExperimentalPpgAnalyzer()
+        for i in range(250):
+            pulse = math.sin(2*math.pi*80*(i*.04)/60)
+            analyser.observe(msg(i, i*40, 1418+9*pulse,
+                                 1007+12*pulse, contact=False, g1=False))
+        snap = analyser.snapshot()
+        self.assertIsNotNone(snap["spo2_candidate"])
+        self.assertIsNone(snap["spo2"])
+        self.assertIsNone(snap["bpm"])
+        self.assertTrue(all(v is None for _, v in snap["spo2_history"]))
+        self.assertIn("SEM CONTATO", snap["status"])
+
+    def test_contact_returns_after_finger_reposition(self):
+        analyser = ExperimentalPpgAnalyzer()
+        # Antes do contato a formula pode fornecer candidato invisivel.
+        for i in range(150):
+            pulse = math.sin(2*math.pi*80*(i*.04)/60)
+            analyser.observe(msg(i, i*40, 1418+9*pulse,
+                                 1007+12*pulse, contact=False, g1=False))
+        self.assertIsNone(analyser.snapshot()["spo2"])
+        # Recuperacao inicia nova janela e so exibe apos 3 segundos.
+        for i, (t, red, ir) in enumerate(synthetic(seconds=5)):
+            analyser.observe(msg(i+150, t+6000, red, ir,
+                                 contact=True, g1=False))
+            if i < 70:
+                self.assertIsNone(analyser.snapshot()["spo2"])
+        final = analyser.snapshot()
+        self.assertIsNotNone(final["spo2"])
+        self.assertIsNotNone(final["bpm"])
+        self.assertEqual(final["quality"]["g1"], False)
+        self.assertEqual(final["quality"]["contact"], True)
+
+    def test_contact_good_but_incoherent_red_ir_masks_spo2_only(self):
+        # A formula gera candidato sem coerencia, enquanto BPM do IR
+        # continua disponivel para diagnostico de ritmo.
+        analyser = ExperimentalPpgAnalyzer()
+        for i in range(250):
+            t = i*40
+            red = 100000 + 600*math.sin(2*math.pi*37*t/60000)
+            ir = 110000 + 1000*math.sin(2*math.pi*75*t/60000)
+            analyser.observe(msg(i, t, red, ir, contact=True, g1=False))
+        snap = analyser.snapshot()
+        self.assertIsNotNone(snap["bpm"])
+        self.assertIsNone(snap["spo2"])
+        self.assertIn("Baixa coerencia RED/IR", snap["quality"]["warnings"])
 
     def test_quality_drop_preserves_previous_estimates_in_history(self):
         analyser = ExperimentalPpgAnalyzer()
