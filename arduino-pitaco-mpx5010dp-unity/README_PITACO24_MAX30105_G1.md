@@ -3,22 +3,26 @@
 **Documentação do baseline:** [Visão geral](docs/BASELINE.md) · [Gate 01 e suas funções](docs/GATE_01.md) · [BLE, USB e ponte Unity](docs/BLE_USB.md). Capturas CSV locais ficam fora do Git.
 
 
-## Objetivo e arquitetura minima
+## Objetivo e arquitetura atual
 
-Esta branch simplifica a PR anterior. Apenas dois arquivos de firmware:
+**ATENCAO:** este README foi originalmente escrito para o prototipo de
+dois arquivos .ino. Seu restante conserva varias referencias historicas,
+inclusive a antiga COM virtual do oximetro, que **foi removida** do
+middleware. Para arquitetura e contratos correntes consulte:
+[mapa SoC de todas as abas .ino](docs/SOC_INO_TABS.md),
+[baseline atualizado](docs/BASELINE.md),
+[documentacao de BLE/USB](docs/BLE_USB.md) e
+[interface modular Python](docs/MIDDLEWARE_MODULAR.md).
 
-- arduino-pitaco-mpx5010dp-unity.ino
-  - Preserva a coleta de pressao MPX5010DP, calibração, USB, BLE e OTA.
-  - Configura MAX30105, coleta RED/IR e invoca SQI G1.
-  - Calcula BPM experimental com checkForBeat(IR) da biblioteca SparkFun.
-  - Envia JSON Lines tanto por USB quanto por Bluetooth BLE.
-- gate_01_integrity.ino
-  - Gate 01 com thresholds PROVISORIOS; nao modifica o PPG.
-
-A ponte Python mantida ble_client_mpx5010dp.py entende o JSON e continua
-distribuindo pressao/fluxo ao controlador PITACO legado no Unity. Adiciona
-porta virtual opcional para o controlador Oximetro do Unity.
-pitaco24_protocol.py e somente um pequeno parser Python compartilhado.
+O ESP32-C3 continua lendo o MPX5010DP (~20 Hz) e o MAX30102
+(~25 pares RED/IR por segundo). A implementacao agora usa **separacao
+de responsabilidades**: orquestrador principal, comandos, respiracao,
+BLE/OTA, aquisicao PPG, contato/G1, BPM e serializacao JSON em abas
+`.ino`. O driver SparkFun local permanece em `src/vendor_sparkfun_max3010x/`
+com a correcao FIFO64, pois o Arduino compila o driver de terceiros como
+`.h/.cpp`; nao o renomeamos para `.ino`. A interface Python atual
+preserva a unica COM do jogo respiratorio e nao abre segunda COM do
+oximetro.
 
 ## Biblioteca e GPIOs
 
