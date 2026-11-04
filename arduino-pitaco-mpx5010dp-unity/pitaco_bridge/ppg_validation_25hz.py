@@ -73,9 +73,17 @@ def _window_metrics(samples, window, reason, reported_count):
     red = [row["red"] for row in samples]
     ir = [row["ir"] for row in samples]
     dts = [b-a for a,b in zip(t,t[1:])]
+    # A presenca de N registros nao prova continuidade: verificar seq/timestamp.
+    seq = [row.get("seq") for row in samples]
+    seq_contiguous = (all(x is not None for x in seq) and
+                      all((b-a) % 65536 == 1 for a,b in zip(seq,seq[1:])))
+    timing_ok = all(0 < dt <= 100 for dt in dts)
+    complete = (len(samples)==reported_count and
+                seq_contiguous and timing_ok and len(samples)>0)
     fs = 1000.0/statistics.median(dts) if dts and min(dts)>0 else None
     out = {"window": window, "reason": reason, "reported_samples": reported_count,
-           "captured_samples": len(samples), "complete": len(samples)==reported_count,
+           "captured_samples": len(samples), "complete": complete,
+           "seq_contiguous": seq_contiguous, "timing_ok": timing_ok,
            "fs_hz": round(fs,3) if fs else None}
     for name,vals in (("red",red),("ir",ir)):
         dc = statistics.fmean(vals) if vals else 0.0
