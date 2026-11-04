@@ -340,3 +340,37 @@ aproximadamente 24 s, `contact=false` e G1 reprovado em toda a captura,
 RED médio ~1418 e IR médio ~1007. Isso explica por que nenhum valor
 de SpO₂ deve ser exibido nessa janela. O CSV individual não é armazenado
 no repositório.
+
+## Quatro cartões de monitoramento e médias móveis de 60 segundos
+
+O cabeçalho óptico está organizado em duas linhas: **BPM atual | BPM médio
+60 s** e **SpO₂ atual | SpO₂ média 60 s**. O cartão BPM médio exibe
+**duas médias distintas**, firmware ESP32 e estimativa Python; não mistura
+as fontes. O cartão SpO₂ média usa somente estimativas experimentais já
+liberadas para apresentação, não as contagens RED/IR nem
+`spo2_candidate`. Ambos os cálculos continuam sendo de bancada e não
+estão calibrados para uso clínico.
+
+A função `_rolling_mean_by_seconds` em `pitaco_bridge/monitor.py` agrupa
+leituras numéricas pelo segundo do dispositivo, calcula a média de
+cada segundo e depois a média dos segundos válidos presentes na janela
+deslizante de 60 s. Assim, um segundo com 25 mensagens de firmware não tem
+mais peso do que um segundo com menos mensagens. Instantes sem estimativa
+não são interpolados nem tratados como zero. São necessários ao menos
+**3 segundos com estimativas** para mostrar uma média inicial.
+
+Antes de reunir uma janela completa, cada média é **parcial**.
+O estado **completa** exige 60 s transcorridos desde o início do trecho
+contínuo de contato e pelo menos 45 segundos contendo estimativas da
+respectiva fonte; caso contrário continua parcial. A cobertura é
+exibida em segundos na interface. O G1 continua com o comportamento
+original em cada fonte: firmware qualificado depende de G1, Python não.
+
+Ao perder contato, a média corrente mostra `--` imediatamente. Ao
+recuperar o contato, começa um novo trecho de média; não mescla estimativas
+da colocação anterior, mas mantém histórico dos gráficos. Sem novas
+amostras por 2 s, os quatro indicadores ficam indisponíveis. O histórico
+RAW na tela continua com aproximadamente 30 s (850 pontos), enquanto
+um buffer **independente de 1.800 leituras** guarda o BPM firmware para
+a média de 60 s. O analisador Python já conserva 300 estimativas
+(aproximadamente 120 s a cada 400 ms).
