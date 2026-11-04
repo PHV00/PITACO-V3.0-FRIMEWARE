@@ -72,3 +72,18 @@ no JSON PPG recebido pelo USB ou BLE existentes. Não houve alteração no
 firmware, parser, qualidade do sinal ou cálculo de BPM/SpO₂. A porta virtual
 do **jogo respiratório** permanece para pressão/fluxo e comandos do PITACO;
 ela não passa automaticamente a transportar BPM/SpO₂ para a Unity.
+
+## Atualização — monitor cardíaco e SpO₂ automáticos (04/11/2026)
+
+O analisador experimental de `pitaco_bridge/experimental.py` agora é sempre
+executado durante a aquisição RED/IR. O `PpgMonitor.observe()` dispara o
+processamento sem depender de abertura do gráfico; `oxy_and_cardio_view.py`
+mostra as curvas BPM Python e SpO₂ experimental diretamente. A antiga checkbox
+foi removida. O campo `experimental.enabled=true` permanece no snapshot por
+compatibilidade de leitura, mas não existe controle para desativá-lo.
+
+As estimativas continuam condicionadas a contato, G1 e aproximadamente 8 s de
+sinal contínuo. Na ausência de condições adequadas aparecem `--` e lacunas;
+a SpO₂ não foi calibrada, não tem uso clínico e **não é enviada à Unity**.
+O firmware, o cálculo de BPM embarcado, os gráficos respiratórios, BLE/USB e
+CSV RAW permanecem inalterados por esta alteração.
