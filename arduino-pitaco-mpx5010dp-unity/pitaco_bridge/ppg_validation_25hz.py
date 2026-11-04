@@ -9,6 +9,7 @@ import statistics
 from collections import Counter, deque
 
 from .experimental import _ac_signal, estimate_experimental
+from .sparkfun_pba_replay import replay_sparkfun
 
 FIR_COEFFS = (172, 321, 579, 927, 1360, 1858, 2390, 2916, 3391, 3768, 4012, 4096)
 DEFAULT_THRESHOLDS = (300, 400, 500, 600, 700, 1000)
@@ -200,4 +201,5 @@ def analyze_capture(rows, thresholds=DEFAULT_THRESHOLDS, labels=None):
             "windows":windows,"threshold_sweep":threshold_sweep(windows,thresholds,labels),
             "sparkfun_fir_gain":{"25hz":{str(b):sparkfun_fir_gain(25,b) for b in (60,90,120)},
                                  "100hz":{str(b):sparkfun_fir_gain(100,b) for b in (60,90,120)}},
+            "sparkfun_pba_replay":replay_sparkfun(samples),
             "experimental_estimates":estimates}
