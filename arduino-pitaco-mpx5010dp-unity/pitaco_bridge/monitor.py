@@ -163,6 +163,9 @@ class PpgMonitor:
         self._lock = threading.Lock()
         self.history = deque(maxlen=max_points)
         self.bpm_history = deque(maxlen=max_points)
+        # Retencao independente da tela de 30s: a media exige 60s reais
+        # de BPM do firmware, a ~25 amostras/s.
+        self.bpm_mean_history = deque(maxlen=1800)
         self.recent_rx = deque(maxlen=400)
         self.csv = PpgCsvRecorder()
         self.experimental = ExperimentalPpgAnalyzer()
@@ -172,6 +175,7 @@ class PpgMonitor:
         with self._lock:
             self.history.clear()
             self.bpm_history.clear()
+            self.bpm_mean_history.clear()
             self.recent_rx.clear()
             self.experimental.reset()
             self.first_rx = None
@@ -253,6 +257,7 @@ class PpgMonitor:
                         self.seq_resets += 1
                         self.history.clear()
                         self.bpm_history.clear()
+                        self.bpm_mean_history.clear()
                         self.recent_rx.clear()
                         self.mean_segment_start_s = None
                         self.last_seq = seq
@@ -307,6 +312,7 @@ class PpgMonitor:
                 else:
                     self.fw_bpm_status = "BPM firmware valido"
                 self.bpm_history.append((sample_t, accepted_bpm))
+                self.bpm_mean_history.append((sample_t, accepted_bpm))
                 self.experimental.observe(msg, gap=sequence_gap)
         self.csv.record(msg, source, now)
 
@@ -327,7 +333,7 @@ class PpgMonitor:
                         if isinstance(self.last_t_ms, (int, float)) else None)
             segment = self.mean_segment_start_s if self.contact is True else None
             fw_mean = _rolling_mean_by_seconds(
-                self.bpm_history, latest_s, segment)
+                self.bpm_mean_history, latest_s, segment)
             py_mean = _rolling_mean_by_seconds(
                 self.experimental.bpm_history, latest_s, segment)
             spo2_mean = _rolling_mean_by_seconds(
