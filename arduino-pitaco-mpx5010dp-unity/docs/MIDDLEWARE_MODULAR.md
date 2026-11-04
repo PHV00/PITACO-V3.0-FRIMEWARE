@@ -104,3 +104,14 @@ de 850 pontos. O contador `Reinícios seq` permite detectar reinicialização
 do firmware. Os históricos BPM/SpO₂ não são apagados em perdas transitórias
 de contato, gaps ou reprovação G1; somente as leituras **atuais** podem
 ficar indisponíveis. Os dados RAW continuam disponíveis para exportação CSV.
+
+### Correção contra falsas SpO₂ com dedo ausente
+
+A função de cálculo experimental permanece independente do G1 e gera
+candidatos `spo2_candidate` / `bpm_candidate` para comparação offline.
+A apresentação dos resultados atuais `spo2` / `bpm` exige contato
+óptico confirmado (`sqi.contact=true`) e nível RED/IR suficiente;
+a SpO₂ também requer AC e coerência dos canais suficientes para exibição.
+Sem contato a interface mostra `--` e mantém o histórico anterior.
+O retorno do dedo reinicia somente a janela móvel; o firmware não é
+alterado, e a SpO₂ demonstrativa continua não calibrada e não clínica.
