@@ -14,8 +14,9 @@ from collections import deque
 MIN_BPM = 35
 MAX_BPM = 200
 WINDOW_MS = 8000
-MIN_WINDOW_MS = 7500
-PERIOD_MS = 1000
+MIN_WINDOW_MS = 3000       # diagnostico em tempo de execucao, sem aguardar 8 s
+MIN_WINDOW_SAMPLES = 70     # ~2,8 s a 25 Hz; exige tambem 3 s reais
+PERIOD_MS = 400            # recalcula ate 2,5 vezes por segundo
 ADC_MAX = 262143
 
 
@@ -81,8 +82,8 @@ def estimate_experimental(rows):
     Este e um prototipo para comparar com referencias, NAO um SQI clinico.
     """
     result = dict(bpm=None, spo2=None, ratio=None, periodicity=None,
-                  cross_corr=None, fs=None, status="Aguardando janela")
-    if len(rows) < 160 or rows[-1][0] - rows[0][0] < MIN_WINDOW_MS:
+                  cross_corr=None, fs=None, status="Aguardando janela (min. 3 s)")
+    if len(rows) < MIN_WINDOW_SAMPLES or rows[-1][0] - rows[0][0] < MIN_WINDOW_MS:
         return result
     ts, reds, irs = zip(*rows)
     dts = [(b-a)/1000.0 for a,b in zip(ts, ts[1:])]
@@ -152,7 +153,7 @@ class ExperimentalPpgAnalyzer:
         self.last_calc_ms = None
         self.result = self._empty()
 
-    def _empty(self, status="Aguardando G1 + contato"):
+    def _empty(self, status="Aguardando sinal / contato"):
         return dict(bpm=None, spo2=None, ratio=None, periodicity=None,
                     cross_corr=None, fs=None, status=status)
 
@@ -161,7 +162,7 @@ class ExperimentalPpgAnalyzer:
         self.bpm_history.clear()
         self.spo2_history.clear()
         self.last_calc_ms = None
-        self.result = self._empty("Aguardando G1 + contato")
+        self.result = self._empty("Aguardando sinal / contato")
 
     def observe(self, msg, gap=False):
         if msg.get("type") != "sample":
@@ -170,7 +171,10 @@ class ExperimentalPpgAnalyzer:
         ppg = msg.get("ppg") or {}
         sqi = msg.get("sqi") or {}
         red, ir = ppg.get("red"), ppg.get("ir")
-        good = (sqi.get("contact") is True and sqi.get("g1") is True
+        # G1 e informativo apenas neste monitor de bancada: a estimativa
+        # pode surgir antes da primeira janela G1 (5 s), sem ganhar status
+        # de dado qualificado. Contato, amplitude e continuidade seguem obrigatorios.
+        good = (sqi.get("contact") is True
                 and isinstance(t_ms, (int, float))
                 and isinstance(red, (int, float)) and isinstance(ir, (int, float))
                 and all(math.isfinite(v) for v in (t_ms, red, ir))
@@ -180,7 +184,7 @@ class ExperimentalPpgAnalyzer:
                 (t_ms <= self.rows[-1][0] or t_ms-self.rows[-1][0] > 100)):
             self.rows.clear()
             self.last_calc_ms = None
-            self.result = self._empty("G1/contato/gap: sem estimativa")
+            self.result = self._empty("Sem contato/sinal ou gap: sem estimativa")
             if isinstance(t_ms, (int, float)):
                 self.bpm_history.append((t_ms/1000.0, None))
                 self.spo2_history.append((t_ms/1000.0, None))
@@ -192,6 +196,9 @@ class ExperimentalPpgAnalyzer:
         if self.last_calc_ms is None or t_ms-self.last_calc_ms >= PERIOD_MS:
             self.last_calc_ms = t_ms
             self.result = estimate_experimental(list(self.rows))
+            if sqi.get("g1") is not True:
+                gate_state = "reprovado" if sqi.get("g1") is False else "pendente"
+                self.result["status"] += f" | G1 {gate_state}: SOMENTE DIAGNOSTICO"
             self.bpm_history.append((t_ms/1000.0, self.result["bpm"]))
             self.spo2_history.append((t_ms/1000.0, self.result["spo2"]))
 
