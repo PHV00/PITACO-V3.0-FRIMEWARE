@@ -47,7 +47,7 @@ A PR #4 que experimenta transmissão binária permanece separada.
 - open_ppg_graph / close_ppg_graph: exibem/escondem somente a janela óptica, compartilhando o comando de aquisição com o pneumógrafo.
 - update_plot: desenha somente o gráfico respiratório original.
 - update_ppg_plot: desenha RED/IR sem filtrar, histórico de BPM qualificado e painel G1/contato/taxa/erros.
-- SpO2 permanece explicitamente **não calculada**, sem gráfico fictício nem sentinela 0% na GUI.
+- SpO₂ **não é calculada pelo firmware**; a GUI calcula automaticamente uma demonstração experimental no PC quando G1/contato e janela de dados permitem, sem exibir 0% fictício.
 - process_pitaco_line: segue fazendo o encaminhamento original para o jogo.
 
 ## Como interpretar o testador
@@ -62,7 +62,7 @@ A PR #4 que experimenta transmissão binária permanece separada.
 | Contato | detecção experimental do firmware, não saturação de oxigênio |
 | G1 | estado efetivo atual e contagem de janelas G1 |
 | BPM | somente bpm_valid com contato e G1 aceitos; o histórico mostra lacunas quando inválido |
-| SpO2 | não calculada, sem exibir 0% nem estimativa inventada |
+| SpO₂ | estimativa Python experimental automática quando disponível; sem sinal, `--` e lacuna no gráfico |
 | Pressão | quantidade de linhas legadas recebidas |
 | CSV descartadas | perda na fila de gravação do PC, distinta da perda BLE |
 
@@ -120,7 +120,7 @@ ledMode=2 (RED+IR), desliga o verde e chama checkForBeat(IR >> 3),
 com RED/IR originais de 18 bits preservados na telemetria. Não habilitar
 verde para a GUI: ele não é necessário para BPM em IR, e não existe no
 MAX30102. SpO2 demanda algoritmo de oximetria e calibração/validação
-própria; não é calculada nesta mudança de middleware.
+própria; a SpO₂ ainda não é calculada no firmware. No PC há apenas uma estimativa demonstrativa não calibrada.
 
 ## Referência função por função do middleware Python
 
@@ -170,13 +170,19 @@ O início da aquisição é compartilhado: em modo somente monitor a ponte já
 envia r ao conectar; abrir qualquer gráfico **não deve repetir r** se
 is_sampling já está ativo. Nenhum gráfico roda processamento SQI novo.
 
-## Modo experimental PC: BPM e SpO₂ ilustrativa (opt-in, sem firmware novo)
+## Monitor experimental PC: BPM e SpO₂ ilustrativa (automático, sem firmware novo)
 
-Disponivel **somente** no painel `Monitor Cardíaco / SpO₂`: habilitar a
-checkbox **Calcular BPM e SpO₂ experimentais NO PYTHON (não calibrados)**.
-Desligada por padrão; funciona igualmente por USB ou BLE, pois utiliza
-somente mensagens `sample` RED/IR já recebidas. Não muda a caracteristica
-GATT, firmware, sensor, G1, pressão, CSV RAW ou dados enviados à Unity.
+Os cálculos Python iniciam automaticamente com o monitor de aquisição,
+**mesmo que a janela gráfica não esteja aberta**. Não existe mais checkbox
+para habilitar/desabilitar BPM e SpO₂ experimentais. A janela mostra os
+históricos diretamente quando aberta, usando as mensagens `sample` RED/IR
+já recebidas por USB ou BLE.
+
+A tentativa de cálculo ocorre aproximadamente a cada segundo; um número
+só é exibido após janela contínua suficiente e critérios experimentais
+de G1, contato e integridade. Sem qualidade ou sem dados recentes, os
+indicadores mostram `--` e os gráficos mantêm lacunas, sem inventar valores.
+Não altera GATT, firmware, sensor, Gate 01, pressão, CSV RAW ou Unity.
 
 **Apresentacao:** legenda `FW qualificado` (roxo) = BPM fornecido pelo
 ESP32 com `bpm_valid=true`; `Python EXP.` (amarelo) = BPM independente
@@ -185,7 +191,7 @@ CALIBRADA. O painel mostra também índice R e motivo de indisponibilidade.
 Sem sinal, o gráfico tem lacunas/valor `--`, nunca interpola ou inventa
 medição. SpO₂ experimental **não é dispositivo médico nem prova de precisão**.
 
-### Como o cálculo é feito (pitaco24_experimental.py)
+### Como o cálculo é feito (`pitaco_bridge/experimental.py`)
 
 1. Receber pares sincronizados RED/IR e `t_ms` (~25 Hz); descartar para
    estimativa qualquer amostra sem contato ou sem `sqi.g1=true`.
@@ -210,8 +216,8 @@ medição. SpO₂ experimental **não é dispositivo médico nem prova de precis
    não equivale a aferição de saturação.
 
 A atualização ocorre a cada ~1 segundo de telemetria; todo cálculo é no
-PC, independente do filtro do pneumógrafo, e só quando a checkbox está
-ativa. O resultado experimental **não é transmitido à Unity**. Esta versão da ponte
+PC, independente do filtro do pneumógrafo, automaticamente durante a
+coleta válida, sem botão de habilitação. O resultado experimental **não é transmitido à Unity**. Esta versão da ponte
 mantém somente a COM virtual de pressão/fluxo para o jogo respiratório.
 O monitor recebe RED/IR, BPM e SQI pelo JSON do ESP32, sem COM adicional.
 
@@ -251,7 +257,7 @@ O painel **Monitor Cardíaco / SpO₂** tem três gráficos de cima para baixo:
 2. **BPM (gráfico central):** curva roxa = BPM aceito do firmware ESP32
    (função SparkFun `checkForBeat`, `bpm_valid=true`); curva amarela =
    BPM **experimental** por autocorrelação do IR calculada no Python
-   (somente com a checkbox ligada). Valores do eixo vertical são escala,
+   (automaticamente, após janela válida). Valores do eixo vertical são escala,
    não medição atual. **No canto superior esquerdo**, os dois números
    aparecem em destaque como `ESP32: xx.x BPM` e
    `Python EXP.: xx.x BPM`; quando não existem, mostram `--`.
@@ -261,9 +267,8 @@ O painel **Monitor Cardíaco / SpO₂** tem três gráficos de cima para baixo:
 **Por que pode ficar `--` mesmo com G1 PASS?** O G1 verifica integridade
 básica de janela e contato, **não** comprova batimentos detectáveis.
 O firmware só emite BPM após detecções plausíveis de `checkForBeat`,
-janela G1 válida e batimento recente. O modo Python fica desligado por
-padrão; quando ligado, exige G1+contato e cerca de 8 s adicionais de
-dados contínuos, e pode rejeitar baixa AC, irregularidade ou movimento.
+janela G1 válida e batimento recente. O analisador Python fica sempre ativo e exige G1+contato e cerca de
+8 s de dados contínuos; pode rejeitar baixa AC, irregularidade ou movimento.
 A linha superior agora indica o motivo do firmware:
 `Aguardando G1`, `G1 reprovado`, `Sem contato`,
 `Firmware ainda sem BPM valido`, `BPM firmware valido` ou
