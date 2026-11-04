@@ -349,9 +349,16 @@ def create_oxy_and_cardio_view(app):
 
         ppg_bpm_fw_mean_value.configure(text=f"ESP32: {fmt_mean(fw_avg)}")
         ppg_bpm_py_mean_value.configure(text=f"Python EXP.: {fmt_mean(py_avg)}")
+        bpm_status_label = (
+            ("Completa" if (fw_avg["status"] == "completa" and
+                             py_avg["status"] == "completa") else "Parcial")
+            if (fw_avg["value"] is not None or py_avg["value"] is not None)
+            else "Aguardando"
+        )
         ppg_bpm_mean_status.configure(
-            text=f"FW {fw_avg['valid_seconds']}s | PY {py_avg['valid_seconds']}s"
-                 if mean_visible else "Sem contato / telemetria")
+            text=(f"{bpm_status_label} · FW {fw_avg['valid_seconds']}s / "
+                  f"PY {py_avg['valid_seconds']}s")
+            if mean_visible else "Sem contato / telemetria")
         ppg_spo2_mean_value.configure(text=fmt_mean(spo2_avg, "%"))
         ppg_spo2_mean_status.configure(text=mean_status(spo2_avg))
         ppg_spo2_value.configure(
