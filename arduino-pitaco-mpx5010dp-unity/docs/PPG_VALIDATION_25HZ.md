@@ -76,6 +76,7 @@ O resultado e descritivo: **nenhum limiar novo e aplicado no dispositivo**.
 | `threshold_sweep` | Quantas janelas passariam no **criterio de range RED e IR** | Nao reexecuta todos os gates |
 | `experimental_8s_windows` | Tentativas do analisador Python com G1 e contato validos | Nao mede sensibilidade clinica |
 | `sparkfun_fir_gain` | Modulo do FIR SparkFun por BPM e taxa de amostragem | Nao equivale a probabilidade de detectar beat |
+| `sparkfun_pba_replay` | Reexecucao aproximada do PBA SparkFun IR >> 3 com estado e filtro FIR | Nao substitui verificacao no ESP32; intervalos RR devem ser confirmados |
 
 Valores AC e tendencias **nao comprovam pulsacao sem uma referencia
 independente**, especialmente na presenca de movimento.
@@ -102,6 +103,19 @@ O ganho teorico do FIR original, calculado de seus coeficientes:
 
 A resposta total de `checkForBeat` tambem depende do estimador DC,
 `ir >> 3`, estado interno e do limiar de amplitude 20..1000.
+
+O replay offline da logica inteira do `heartRate.cpp` da captura USB
+observou **8 eventos** de beat, mas **0 pares de eventos consecutivos**
+no intervalo de 300..1714 ms aceito pelo firmware para gerar BPM.
+Isso e consistente com a ausencia de BPM no CSV, mas deve ser confirmado
+com logs de timestamps de batimentos na placa. Em senoide artificial
+IR com amplitude de 1000 ADC, 120 BPM, 30 s: o replay detecta zero
+batimentos a 25 Hz e detecta eventos a 100 Hz. Nao extrapolar isso
+para sujeitos reais ou para todas as amplitudes.
+
+O replay `sparkfun_pba_replay.py` e **um comparador de bancada**:
+transcreve as operacoes inteiras, filtros e limiares da biblioteca,
+mas nao testa as interrupcoes, deriva de tempo, I2C ou estado real do ESP32.
 
 ## Como escolher um limite com referencia
 
