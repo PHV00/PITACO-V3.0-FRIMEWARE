@@ -30,7 +30,7 @@ class GuiSplitTests(unittest.TestCase):
             self.assertIn(name, pneumo)
             self.assertNotIn(name, main)
         for name in ("create_oxy_and_cardio_view", "update_ppg_plot",
-                     "toggle_ppg_csv", "toggle_ppg_experiment"):
+                     "toggle_ppg_csv"):
             self.assertIn(name, cardio)
             self.assertNotIn(name, main)
         for name in ("ble_bridge", "start_bridge", "stop_bridge",
@@ -51,6 +51,8 @@ class GuiSplitTests(unittest.TestCase):
         self.assertIn("if app.is_plotting:", pneumo)
         self.assertIn("if not app.is_ppg_plotting:", cardio)
         self.assertIn("ppg_monitor.snapshot()", cardio)
+        self.assertNotIn("CTkCheckBox(", cardio)
+        self.assertNotIn("toggle_ppg_experiment", main + cardio)
         self.assertNotIn("BleakClient(", cardio)
         self.assertNotIn("BleakClient(", pneumo)
         self.assertNotIn("Serial(", cardio)
