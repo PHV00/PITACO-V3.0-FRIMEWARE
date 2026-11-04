@@ -64,17 +64,13 @@ class ExperimentalPpgTests(unittest.TestCase):
         self.assertIsNone(result["bpm"])
         self.assertIsNone(result["spo2"])
 
-    def test_disabled_by_default_and_contact_gates(self):
+    def test_continuous_by_default_and_contact_gates(self):
         analyser = ExperimentalPpgAnalyzer()
-        for i, (t, red, ir) in enumerate(synthetic()):
-            analyser.observe(msg(i,t,red,ir))
-        self.assertFalse(analyser.snapshot()["enabled"])
-        self.assertIsNone(analyser.snapshot()["bpm"])
-
-        analyser.set_enabled(True)
+        self.assertTrue(analyser.snapshot()["enabled"])
         for i, (t, red, ir) in enumerate(synthetic()):
             analyser.observe(msg(i,t,red,ir))
         self.assertAlmostEqual(analyser.snapshot()["bpm"], 75, delta=3)
+        self.assertIsNotNone(analyser.snapshot()["spo2"])
         analyser.observe(msg(251, 10040, 1500, 1800, contact=False, g1=False))
         self.assertIsNone(analyser.snapshot()["bpm"])
         self.assertIsNone(analyser.snapshot()["spo2"])
@@ -92,7 +88,7 @@ class ExperimentalPpgTests(unittest.TestCase):
 
     def test_disconnected_monitor_does_not_keep_live_estimate(self):
         m = PpgMonitor()
-        m.set_experimental_enabled(True)
+        self.assertTrue(m.snapshot()["experimental"]["enabled"])
         for i, (t, red, ir) in enumerate(synthetic()):
             m.observe(msg(i, t, red, ir), "BLE", now=100+i*.04)
         current = m.snapshot(now=110.0)["experimental"]
@@ -105,8 +101,7 @@ class ExperimentalPpgTests(unittest.TestCase):
 
     def test_monitor_still_keeps_all_raw_and_legacy_bpm(self):
         m = PpgMonitor(max_points=300)
-        self.assertFalse(m.snapshot()["experimental"]["enabled"])
-        m.set_experimental_enabled(True)
+        self.assertTrue(m.snapshot()["experimental"]["enabled"])
         for i, (t, red, ir) in enumerate(synthetic()):
             m.observe(msg(i,t,red,ir), "USB", now=100+i*.04)
         snap = m.snapshot(now=110)
