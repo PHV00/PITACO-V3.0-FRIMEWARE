@@ -38,26 +38,14 @@ def create_oxy_and_cardio_view(app):
 
     spo2_state_label = ctk.CTkLabel(
         ppg_info_frame,
-        text="SpO₂: não calculada (RED e IR brutos; sem estimativa validada)",
+        text="SpO₂ EXPERIMENTAL: -- | NÃO CALIBRADA / NÃO VALIDADA",
         font=("Segoe UI", 12, "bold"), text_color="#fbbf24", anchor="w")
     spo2_state_label.pack(fill="x", padx=10)
 
 
-    def toggle_ppg_experiment():
-        """Liga calculos de bancada no PC; nao envia seus valores para Unity."""
-        ppg_monitor.set_experimental_enabled(ppg_experiment_var.get())
-
-
-    ppg_experiment_var = ctk.BooleanVar(value=False)
-    ppg_experiment_checkbox = ctk.CTkCheckBox(
-        ppg_info_frame, variable=ppg_experiment_var,
-        text="Calcular BPM e SpO₂ experimentais NO PYTHON (não calibrados)",
-        text_color="#fbbf24", command=toggle_ppg_experiment)
-    ppg_experiment_checkbox.pack(anchor="w", padx=12, pady=(6, 0))
-
     ppg_exp_status_label = ctk.CTkLabel(
         ppg_info_frame,
-        text="Modo experimental: DESLIGADO | BPM Python: -- | R: --",
+        text="Cálculo experimental contínuo: aguardando G1 + contato | BPM Python: -- | R: --",
         font=("Segoe UI", 11), text_color="#fbbf24", anchor="w")
     ppg_exp_status_label.pack(fill="x", padx=10, pady=(0, 2))
 
@@ -186,43 +174,36 @@ def create_oxy_and_cardio_view(app):
             line_bpm.set_data([], [])
 
         experimental = snap["experimental"]
-        if experimental["enabled"]:
-            if experimental["bpm_history"]:
-                xs_py, ys_py = zip(*experimental["bpm_history"])
-                line_bpm_exp.set_data(xs_py, ys_py)
-            else:
-                line_bpm_exp.set_data([], [])
-            if experimental["spo2_history"]:
-                xs_spo2, ys_spo2 = zip(*experimental["spo2_history"])
-                line_spo2_exp.set_data(xs_spo2, ys_spo2)
-            else:
-                line_spo2_exp.set_data([], [])
-            py_bpm = (f"{experimental['bpm']:.1f}"
-                      if experimental["bpm"] is not None else "--")
-            py_ratio = (f"{experimental['ratio']:.3f}"
-                        if experimental["ratio"] is not None else "--")
-            spo2_text = (f"{experimental['spo2']:.1f}%"
-                         if experimental["spo2"] is not None else "--")
-            ppg_exp_status_label.configure(
-                text=(f"BPM Python EXP.: {py_bpm} | Índice R: {py_ratio} | "
-                      f"Estado: {experimental['status']}"))
-            spo2_state_label.configure(
-                text=(f"SpO₂ EXPERIMENTAL: {spo2_text} | "
-                      "NÃO CALIBRADA / NÃO VALIDADA — NÃO USAR CLINICAMENTE"))
+        if experimental["bpm_history"]:
+            xs_py, ys_py = zip(*experimental["bpm_history"])
+            line_bpm_exp.set_data(xs_py, ys_py)
         else:
             line_bpm_exp.set_data([], [])
+        if experimental["spo2_history"]:
+            xs_spo2, ys_spo2 = zip(*experimental["spo2_history"])
+            line_spo2_exp.set_data(xs_spo2, ys_spo2)
+        else:
             line_spo2_exp.set_data([], [])
-            ppg_exp_status_label.configure(
-                text="Modo experimental: DESLIGADO | BPM Python: -- | R: --")
-            spo2_state_label.configure(
-                text="SpO₂: não calculada (RED e IR brutos; sem estimativa validada)")
+
+        py_bpm = (f"{experimental['bpm']:.1f}"
+                  if experimental["bpm"] is not None else "--")
+        py_ratio = (f"{experimental['ratio']:.3f}"
+                    if experimental["ratio"] is not None else "--")
+        spo2_text = (f"{experimental['spo2']:.1f}%"
+                     if experimental["spo2"] is not None else "--")
+        ppg_exp_status_label.configure(
+            text=(f"BPM Python EXP.: {py_bpm} | Índice R: {py_ratio} | "
+                  f"Estado: {experimental['status']}"))
+        spo2_state_label.configure(
+            text=(f"SpO₂ EXPERIMENTAL: {spo2_text} | "
+                  "NÃO CALIBRADA / NÃO VALIDADA — NÃO USAR CLINICAMENTE"))
 
         contact = {True: "presente", False: "ausente"}.get(snap["contact"], "--")
         g1_state = {True: "PASS", False: "REPROVADO"}.get(snap["g1_effective"], "aguardando")
         bpm_text = f"{snap['bpm']:.1f}" if snap["bpm"] is not None else "--"
         bpm_fw_corner.set_text(f"ESP32: {bpm_text} BPM")
         bpm_py_corner.set_text(
-            f"Python EXP.: {py_bpm if experimental['enabled'] else '--'} BPM")
+            f"Python EXP.: {py_bpm} BPM")
         ppg_state_label.configure(
             text=(f"PPG {snap['source'] or '--'} | Contato: {contact} | "
                   f"G1: {g1_state} (motivo {snap['reason']}) | "
@@ -246,8 +227,6 @@ def create_oxy_and_cardio_view(app):
     return SimpleNamespace(
         window=ppg_window,
         csv_button=ppg_csv_btn,
-        experiment_checkbox=ppg_experiment_checkbox,
-        toggle_ppg_experiment=toggle_ppg_experiment,
         toggle_ppg_csv=toggle_ppg_csv,
         update_ppg_plot=update_ppg_plot,
         animation=ani_ppg,
