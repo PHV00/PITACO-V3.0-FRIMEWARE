@@ -34,11 +34,13 @@ def _rolling_mean_by_seconds(series, latest_s, segment_start_s, window_s=MEAN_WI
     if (segment_start_s is None or latest_s is None or
             not math.isfinite(latest_s) or not math.isfinite(segment_start_s)):
         return result
-    lo = max(segment_start_s, latest_s-window_s)
+    # Nunca exceder 60 buckets, inclusive se o ultimo t for um segundo inteiro.
+    oldest_bucket = int(math.floor(latest_s)) - int(window_s) + 1
     buckets = {}
     for t, v in series:
         if (not isinstance(t, (int, float)) or not math.isfinite(t) or
-                t < lo or t > latest_s or
+                t < segment_start_s or int(math.floor(t)) < oldest_bucket or
+                t > latest_s or
                 not isinstance(v, (int, float)) or isinstance(v, bool) or
                 not math.isfinite(v)):
             continue
