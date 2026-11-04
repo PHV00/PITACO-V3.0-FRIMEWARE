@@ -51,7 +51,11 @@ class AcquisitionLifecycleContract(unittest.TestCase):
         self.assertLess(f.index("while (max30105.available())"),
                         f.index('Serial.println("X,PPG_FIFO_RECOVERED")'))
         self.assertIn('X,PPG_SW_RING_OVERRUN', f)
-        reset = f[f.index("if (ovf > 0) {", f.index("while (max30105.available())")):]
+        # A recuperacao agora trata overflow fisico e leituras I2C incompletas.
+        self.assertIn("const bool fifoReadError = max30105.takeFIFOReadError();", f)
+        self.assertIn('X,PPG_I2C_FIFO_READ_ERROR', f)
+        reset = f[f.index("if (ovf > 0 || fifoReadError) {",
+                          f.index("while (max30105.available())")):]
         self.assertLess(reset.index("max30105.shutDown();"),
                         reset.index("max30105.clearFIFO();"))
         self.assertLess(reset.index("max30105.clearFIFO();"),
