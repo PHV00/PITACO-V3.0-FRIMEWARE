@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'arduino-pitaco-mpx5010dp-unity/**'
+      - 'frimeware2.5/**'
       - '.github/workflows/pitaco24-g1.yml'
 
 jobs:
@@ -42,3 +43,4 @@ jobs:
       - name: Compilar sketch completo para ESP32-C3
         run: |
           arduino-cli compile --fqbn esp32:esp32:esp32c3 arduino-pitaco-mpx5010dp-unity
+          arduino-cli compile --fqbn esp32:esp32:esp32c3 frimeware2.5
