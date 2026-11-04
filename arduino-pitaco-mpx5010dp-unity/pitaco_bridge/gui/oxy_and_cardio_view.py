@@ -31,23 +31,67 @@ def create_oxy_and_cardio_view(app):
     ppg_info_frame = ctk.CTkFrame(ppg_window, fg_color="#1f1f1f", corner_radius=6)
     ppg_info_frame.pack(fill="x", padx=12, pady=(10, 5))
 
+    # Cabecalho: estado detalhado a esquerda e DOIS indicadores ao vivo
+    # no canto superior direito (BPM ESP32/Python e SpO2 experimental).
+    ppg_header_row = ctk.CTkFrame(ppg_info_frame, fg_color="transparent")
+    ppg_header_row.pack(fill="x", padx=10, pady=(8, 2))
+    ppg_metrics_frame = ctk.CTkFrame(ppg_header_row, fg_color="transparent")
+    ppg_metrics_frame.pack(side="right", anchor="ne", padx=(8, 0))
+    ppg_status_frame = ctk.CTkFrame(ppg_header_row, fg_color="transparent")
+    ppg_status_frame.pack(side="left", fill="both", expand=True, anchor="nw")
+
     ppg_state_label = ctk.CTkLabel(
-        ppg_info_frame, text="PPG: sem dados | Contato: -- | G1: -- | BPM: --",
-        font=("Segoe UI", 12, "bold"), text_color="#e2e8f0", anchor="w")
-    ppg_state_label.pack(fill="x", padx=10, pady=(8, 1))
+        ppg_status_frame, text="PPG: sem dados | Contato: -- | G1: -- | BPM: --",
+        font=("Segoe UI", 12, "bold"), text_color="#e2e8f0",
+        anchor="w", justify="left", wraplength=450)
+    ppg_state_label.pack(fill="x", pady=(0, 2))
 
     spo2_state_label = ctk.CTkLabel(
-        ppg_info_frame,
+        ppg_status_frame,
         text="SpO₂ EXP.: -- | NÃO CALIBRADA — NÃO USAR CLINICAMENTE",
-        font=("Segoe UI", 12, "bold"), text_color="#fbbf24",
-        anchor="w", wraplength=860)
-    spo2_state_label.pack(fill="x", padx=10)
+        font=("Segoe UI", 11, "bold"), text_color="#fbbf24",
+        anchor="w", justify="left", wraplength=450)
+    spo2_state_label.pack(fill="x")
 
     ppg_exp_status_label = ctk.CTkLabel(
-        ppg_info_frame,
-        text="BPM Python EXP.: -- | Índice R: -- | Aguardando G1 + contato",
-        font=("Segoe UI", 11), text_color="#fbbf24", anchor="w")
-    ppg_exp_status_label.pack(fill="x", padx=10, pady=(0, 2))
+        ppg_status_frame,
+        text="BPM Python EXP.: -- | Índice R: -- | Aguardando sinal / contato",
+        font=("Segoe UI", 11), text_color="#fbbf24",
+        anchor="w", justify="left", wraplength=450)
+    ppg_exp_status_label.pack(fill="x", pady=(0, 2))
+
+    ppg_metric_bpm = ctk.CTkFrame(
+        ppg_metrics_frame, fg_color="#111827", border_color="#475569",
+        border_width=1, corner_radius=8, width=172, height=94)
+    ppg_metric_bpm.pack(side="left", padx=(0, 8))
+    ppg_metric_bpm.pack_propagate(False)
+    ctk.CTkLabel(
+        ppg_metric_bpm, text="BPM ATUAL", font=("Segoe UI", 11, "bold"),
+        text_color="#cbd5e1").pack(pady=(6, 0))
+    ppg_bpm_fw_value = ctk.CTkLabel(
+        ppg_metric_bpm, text="ESP32: --", font=("Segoe UI", 14, "bold"),
+        text_color="#a78bfa")
+    ppg_bpm_fw_value.pack(pady=(0, 0))
+    ppg_bpm_py_value = ctk.CTkLabel(
+        ppg_metric_bpm, text="Python EXP.: --", font=("Segoe UI", 12, "bold"),
+        text_color="#fbbf24")
+    ppg_bpm_py_value.pack(pady=(0, 3))
+
+    ppg_metric_spo2 = ctk.CTkFrame(
+        ppg_metrics_frame, fg_color="#111827", border_color="#475569",
+        border_width=1, corner_radius=8, width=148, height=94)
+    ppg_metric_spo2.pack(side="left")
+    ppg_metric_spo2.pack_propagate(False)
+    ctk.CTkLabel(
+        ppg_metric_spo2, text="SpO₂ EXP.", font=("Segoe UI", 11, "bold"),
+        text_color="#cbd5e1").pack(pady=(6, 0))
+    ppg_spo2_value = ctk.CTkLabel(
+        ppg_metric_spo2, text="--", font=("Segoe UI", 20, "bold"),
+        text_color="#34d399")
+    ppg_spo2_value.pack(pady=(0, 0))
+    ctk.CTkLabel(
+        ppg_metric_spo2, text="NÃO CALIBRADA", font=("Segoe UI", 9),
+        text_color="#fbbf24").pack(pady=(0, 3))
 
     ppg_stats_label = ctk.CTkLabel(
         ppg_info_frame, text="Recebidas: 0 | Perdas: 0 | G1: 0 | CSV: 0",
@@ -200,6 +244,9 @@ def create_oxy_and_cardio_view(app):
         contact = {True: "presente", False: "ausente"}.get(snap["contact"], "--")
         g1_state = {True: "PASS", False: "REPROVADO"}.get(snap["g1_effective"], "aguardando")
         bpm_text = f"{snap['bpm']:.1f}" if snap["bpm"] is not None else "--"
+        ppg_bpm_fw_value.configure(text=f"ESP32: {bpm_text}")
+        ppg_bpm_py_value.configure(text=f"Python EXP.: {py_bpm}")
+        ppg_spo2_value.configure(text=spo2_text)
         bpm_fw_corner.set_text(f"ESP32: {bpm_text} BPM")
         bpm_py_corner.set_text(
             f"Python EXP.: {py_bpm} BPM")
