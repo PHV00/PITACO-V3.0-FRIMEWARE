@@ -57,8 +57,11 @@ A captura deve ter colunas `type,seq,t_ms,red,ir,bpm_valid,g1,reason,samples,con
 Aceita CSV gerado pelo probe ou GUI. As linhas `type=pressure` sao
 ignoradas. O algoritmo utiliza o evento `type=g1` e seu
 `samples` para selecionar as amostras relevantes de cada janela;
-a validacao `complete` indica se o CSV possui a quantidade esperada.
-Um evento de contato ausente reinicia o acumulador offline.
+a validacao `complete` exige quantidade de registros correta,
+sequencia `seq` continua (considerando wrap uint16) e deltas temporais
+positivos de ate 100 ms. `seq_contiguous` e `timing_ok` sao expostos
+separadamente no JSON. Um evento de contato ausente reinicia o
+acumulador offline.
 O resultado e descritivo: **nenhum limiar novo e aplicado no dispositivo**.
 
 ## O que significam as colunas
@@ -86,6 +89,12 @@ A janela 8 passou no G1 com range RED=991 ADC, mas a mudanca
 inicio/fim foi de -986 ADC: evidencia de forte componente lenta
 potencialmente confundindo a decisao por faixa bruta.
 **Nao e evidencia de que reduzir 500 seja correto.**
+
+No replay do mesmo CSV pelo analisador **experimental ja existente**
+com G1 e contato validos, houve 33 avaliacoes de 8 s e BPM disponivel
+em apenas 6 delas. Esses seis numeros **nao foram comparados com uma
+referencia independente** e nao constituem acuracia nem autorizacao
+para uso no jogo.
 
 O ganho teorico do FIR original, calculado de seus coeficientes:
 - 25 Hz: 60 BPM ~0,774; 90 BPM ~0,318; 120 BPM ~0,063;
