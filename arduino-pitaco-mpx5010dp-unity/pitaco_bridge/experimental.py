@@ -187,6 +187,9 @@ class ExperimentalPpgAnalyzer:
     def _empty(self, status="Aguardando sinal / contato"):
         return dict(bpm=None, spo2=None, ratio=None, periodicity=None,
                     cross_corr=None, fs=None, warnings=[], status=status,
+                    # Candidatos brutos sao exclusivamente para diagnostico.
+                    # NUNCA devem ir aos cartoes/graficos como medicoes.
+                    bpm_candidate=None, spo2_candidate=None,
                     quality=dict(g1=None, contact=None, warnings=[]))
 
     def reset(self):
@@ -249,11 +252,33 @@ class ExperimentalPpgAnalyzer:
         if self.last_calc_ms is None or t_ms-self.last_calc_ms >= PERIOD_MS:
             self.last_calc_ms = t_ms
             self.result = estimate_experimental(list(self.rows))
+
+            # O calculo bruto continua independente do G1/contato; separar
+            # esse candidato matematico do que e EXIBIVEL ao operador.
+            # Nao apresentar SpO2 nem BPM quando o dedo esta ausente:
+            # a curva demo devolve numeros plausiveis ate para ruido.
+            self.result["bpm_candidate"] = self.result["bpm"]
+            self.result["spo2_candidate"] = self.result["spo2"]
+            optical_contact = (contact is True and
+                               red >= 5000 and ir >= 5000)
+            if not optical_contact:
+                self.result["bpm"] = None
+                self.result["spo2"] = None
+                self.result["status"] = "SEM CONTATO: candidato matematico oculto"
+            elif (self.result["spo2"] is not None and
+                  any(flag in self.result["warnings"] for flag in (
+                      "AC RED baixa", "AC IR baixa",
+                      "Baixa coerencia RED/IR", "DC optico baixo"))):
+                # Mesmo com contato, SpO2 depende dos dois canais terem
+                # modulacao e coerencia suficientes. G1 NAO bloqueia.
+                self.result["spo2"] = None
+                self.result["status"] = "SpO2 oculta: RED/IR sem qualidade minima"
+
             self.bpm_history.append((t_ms/1000.0, self.result["bpm"]))
             self.spo2_history.append((t_ms/1000.0, self.result["spo2"]))
 
-        # Qualidade NAO interfere nos resultados numericos. Expor cada
-        # criterio separadamente para comparar estimativas com/sem G1.
+        # Qualidade G1 permanece apenas diagnostica, nao aprova a curva.
+        # Contato optico e um requisito de EXIBICAO, nao do calculo bruto.
         flags = list(self.result["warnings"])
         if contact is not True:
             flags.insert(0, "Contato ausente/desconhecido")
