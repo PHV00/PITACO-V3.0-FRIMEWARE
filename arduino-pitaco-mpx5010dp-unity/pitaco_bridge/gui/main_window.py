@@ -1020,7 +1020,6 @@ update_plot = pneumo_view.update_plot
 oxy_and_cardio_view = create_oxy_and_cardio_view(sys.modules[__name__])
 ppg_window = oxy_and_cardio_view.window
 ppg_csv_btn = oxy_and_cardio_view.csv_button
-toggle_ppg_experiment = oxy_and_cardio_view.toggle_ppg_experiment
 toggle_ppg_csv = oxy_and_cardio_view.toggle_ppg_csv
 update_ppg_plot = oxy_and_cardio_view.update_ppg_plot
 
