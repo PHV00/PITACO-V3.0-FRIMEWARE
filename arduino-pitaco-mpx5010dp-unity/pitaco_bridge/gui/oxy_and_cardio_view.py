@@ -243,11 +243,16 @@ def create_oxy_and_cardio_view(app):
         spo2_text = (f"{experimental['spo2']:.1f}%"
                      if experimental["spo2"] is not None else "--")
         ppg_exp_status_label.configure(
-            text=(f"BPM Python EXP.: {py_bpm} | Índice R: {py_ratio} | "
+            text=(f"BPM Python EXP.: {py_bpm} | R (diagnóstico): {py_ratio} | "
                   f"Estado: {experimental['status']}"))
-        spo2_state_label.configure(
-            text=(f"SpO₂ EXPERIMENTAL: {spo2_text} | "
-                  "NÃO CALIBRADA / NÃO VALIDADA — NÃO USAR CLINICAMENTE"))
+        if snap["sample_age_s"] is None or snap["sample_age_s"] >= 2.0:
+            spo2_status_text = "SpO₂: -- | Sem amostras recentes"
+        elif snap["contact"] is not True:
+            spo2_status_text = "SpO₂: -- | SEM CONTATO — candidato DEMO oculto"
+        else:
+            spo2_status_text = (f"SpO₂ EXPERIMENTAL: {spo2_text} | "
+                                "NÃO CALIBRADA / NÃO VALIDADA — NÃO USAR CLINICAMENTE")
+        spo2_state_label.configure(text=spo2_status_text)
 
         # O avaliador de qualidade nao decide se as formulas rodam.
         # Mostrar as falhas sem apagar os historicos experimentais.
@@ -272,6 +277,9 @@ def create_oxy_and_cardio_view(app):
         ppg_bpm_fw_value.configure(text=f"ESP32: {bpm_text}")
         ppg_bpm_py_value.configure(text=f"Python EXP.: {py_bpm}")
         ppg_spo2_value.configure(text=spo2_text)
+        ppg_spo2_value.configure(
+            text_color="#34d399" if experimental["spo2"] is not None
+                       else "#fbbf24")
         bpm_fw_corner.set_text(f"ESP32: {bpm_text} BPM")
         bpm_py_corner.set_text(
             f"Python EXP.: {py_bpm} BPM")
