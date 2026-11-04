@@ -275,7 +275,7 @@ client = None
 ser = None
 ser_device = None
 ble_ppg_lines = BleJsonlBuffer()
-ppg_monitor = PpgMonitor(max_points=300)
+ppg_monitor = PpgMonitor(max_points=850)  # ~34 s de RAW a 25 Hz
 ble_loop = None
 ble_loop_thread = None
 
