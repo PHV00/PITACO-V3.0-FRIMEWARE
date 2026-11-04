@@ -82,8 +82,16 @@ mostra as curvas BPM Python e SpO₂ experimental diretamente. A antiga checkbox
 foi removida. O campo `experimental.enabled=true` permanece no snapshot por
 compatibilidade de leitura, mas não existe controle para desativá-lo.
 
-As estimativas continuam condicionadas a contato, G1 e aproximadamente 8 s de
-sinal contínuo. Na ausência de condições adequadas aparecem `--` e lacunas;
-a SpO₂ não foi calibrada, não tem uso clínico e **não é enviada à Unity**.
+O Python calcula com janela progressiva de ~3 a 8 segundos, atualizada
+aproximadamente a cada 400 ms. Para esta etapa de bancada, **não exige G1 PASS**
+para estimativa experimental, mas exige contato óptico, integridade temporal,
+periodicidade e amplitude/coerência suficientes. G1 pendente/reprovado fica
+visível como `SOMENTE DIAGNOSTICO`. Na ausência de condições adequadas
+aparecem `--` e lacunas; a SpO₂ não foi calibrada, não tem uso clínico
+e **não é enviada à Unity**.
+
+A janela `Monitor Cardíaco / SpO₂` dispõe de **dois cartões no canto superior
+direito**: um com BPM atual do ESP32 e do Python experimental, outro com
+SpO₂ experimental instantânea. Todos mostram `--` quando indisponíveis.
 O firmware, o cálculo de BPM embarcado, os gráficos respiratórios, BLE/USB e
 CSV RAW permanecem inalterados por esta alteração.
