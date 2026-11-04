@@ -1,4 +1,4 @@
-"""Analisador PC opcional de PPG: somente bancada, NAO uso clinico.
+"""Analisador PC automatico de PPG: somente bancada, NAO uso clinico.
 
 RED/IR RAW do MAX30102 a ~25 Hz. BPM por periodicidade (IR);
 SpO2 ilustrativa pelo indice R=(ACred/DCred)/(ACir/DCir) e curva DEMO
@@ -144,33 +144,27 @@ def estimate_experimental(rows):
 
 
 class ExperimentalPpgAnalyzer:
-    """Um analisador por sessao, desligado por padrao e independente da Unity."""
+    """Analisador automatico por sessao, independente da Unity."""
     def __init__(self):
-        self.enabled = False
         self.rows = deque(maxlen=300)
         self.bpm_history = deque(maxlen=300)
         self.spo2_history = deque(maxlen=300)
         self.last_calc_ms = None
         self.result = self._empty()
 
-    def _empty(self, status="Desligado"):
+    def _empty(self, status="Aguardando G1 + contato"):
         return dict(bpm=None, spo2=None, ratio=None, periodicity=None,
                     cross_corr=None, fs=None, status=status)
-
-    def set_enabled(self, enabled):
-        self.enabled = bool(enabled)
-        self.reset()
 
     def reset(self):
         self.rows.clear()
         self.bpm_history.clear()
         self.spo2_history.clear()
         self.last_calc_ms = None
-        self.result = self._empty("Aguardando G1 + contato" if self.enabled
-                                  else "Desligado")
+        self.result = self._empty("Aguardando G1 + contato")
 
     def observe(self, msg, gap=False):
-        if not self.enabled or msg.get("type") != "sample":
+        if msg.get("type") != "sample":
             return
         t_ms = msg.get("t_ms")
         ppg = msg.get("ppg") or {}
@@ -202,6 +196,6 @@ class ExperimentalPpgAnalyzer:
             self.spo2_history.append((t_ms/1000.0, self.result["spo2"]))
 
     def snapshot(self):
-        return dict(self.result, enabled=self.enabled,
+        return dict(self.result, enabled=True,
                     bpm_history=list(self.bpm_history),
                     spo2_history=list(self.spo2_history))
