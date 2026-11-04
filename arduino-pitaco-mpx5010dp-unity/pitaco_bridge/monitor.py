@@ -5,6 +5,7 @@ o firmware, os thresholds G1 ou os comandos BLE/USB/OTA existentes.
 Amostras reprovadas e de contato ausente permanecem no historico e no CSV.
 """
 import csv
+import math
 import queue
 import threading
 import time
@@ -18,6 +19,41 @@ CSV_FIELDS = (
     "bpm", "bpm_valid", "pressure_pa", "g1", "reason", "samples", "contact"
 )
 _STOP = object()
+
+MEAN_WINDOW_S = 60.0
+
+
+def _rolling_mean_by_seconds(series, latest_s, segment_start_s, window_s=MEAN_WINDOW_S):
+    """Media por segundo das estimativas exibiveis, sem peso extra por pacotes.
+
+    Nao faz media de RED/IR. Cada segundo com uma ou mais leituras validas
+    contribui uma vez. Retorna cobertura para mostrar PARCIAL quando faltam
+    dados; nao inventa estimativas entre lacunas.
+    """
+    result = dict(value=None, valid_seconds=0, status="indisponivel")
+    if (segment_start_s is None or latest_s is None or
+            not math.isfinite(latest_s) or not math.isfinite(segment_start_s)):
+        return result
+    lo = max(segment_start_s, latest_s-window_s)
+    buckets = {}
+    for t, v in series:
+        if (not isinstance(t, (int, float)) or not math.isfinite(t) or
+                t < lo or t > latest_s or
+                not isinstance(v, (int, float)) or isinstance(v, bool) or
+                not math.isfinite(v)):
+            continue
+        key = int(math.floor(t))
+        total, count = buckets.get(key, (0.0, 0))
+        buckets[key] = (total+v, count+1)
+    result["valid_seconds"] = len(buckets)
+    if len(buckets) < 3:
+        return result
+    per_second = [total/count for total, count in buckets.values()]
+    result["value"] = round(sum(per_second)/len(per_second), 1)
+    elapsed = latest_s-segment_start_s
+    result["status"] = ("completa" if elapsed >= window_s and
+                        len(buckets) >= 45 else "parcial")
+    return result
 
 
 class PpgCsvRecorder:
@@ -142,6 +178,7 @@ class PpgMonitor:
             self.last_rx = None
             self.last_seq = None
             self.last_t_ms = None
+            self.mean_segment_start_s = None  # contato continuo da sessao
             self.source = ""
             self.samples = 0
             self.missing = 0
@@ -193,6 +230,9 @@ class PpgMonitor:
             else:
                 seq = msg["seq"]
                 t_ms = msg.get("t_ms")
+                previous_rx = self.last_rx
+                previous_t_ms = self.last_t_ms
+                previous_contact = self.contact
                 ppg = msg["ppg"]
                 sqi = msg.get("sqi") or {}
                 sequence_gap = False
@@ -214,6 +254,7 @@ class PpgMonitor:
                         self.history.clear()
                         self.bpm_history.clear()
                         self.recent_rx.clear()
+                        self.mean_segment_start_s = None
                         self.last_seq = seq
                 else:
                     self.last_seq = seq
@@ -229,6 +270,18 @@ class PpgMonitor:
                             else self.samples / 25.0)
                 self.history.append((sample_t, ppg["red"], ppg["ir"]))
                 self.contact = sqi.get("contact")
+                # Media atual exige contato continuo; o historico completo
+                # permanece para analise, mas NUNCA mistura duas colocacoes
+                # do dedo, reconexoes, ou um relogio reiniciado.
+                if self.contact is not True:
+                    self.mean_segment_start_s = None
+                elif (self.mean_segment_start_s is None or
+                      previous_contact is not True or
+                      (previous_rx is not None and now-previous_rx >= 2.0) or
+                      (isinstance(t_ms, (int, float)) and
+                       isinstance(previous_t_ms, (int, float)) and
+                       t_ms < previous_t_ms)):
+                    self.mean_segment_start_s = sample_t
                 self.g1_effective = sqi.get("g1")
                 self.reason = sqi.get("reason")
                 measured_bpm = ppg.get("bpm")
@@ -267,7 +320,21 @@ class PpgMonitor:
                 rate = (len(rx) - 1) / (rx[-1] - rx[0]) if len(rx) > 1 and rx[-1] > rx[0] else 0.0
             else:
                 rate = 0.0
+            # Quatro campos: duas leituras atuais e duas medias separadas.
+            # As medias nao usam diretamente as contagens opticas e nao
+            # incorporam candidatos sem contato do diagnostico Python.
+            latest_s = (self.last_t_ms/1000.0
+                        if isinstance(self.last_t_ms, (int, float)) else None)
+            segment = self.mean_segment_start_s if self.contact is True else None
+            fw_mean = _rolling_mean_by_seconds(
+                self.bpm_history, latest_s, segment)
+            py_mean = _rolling_mean_by_seconds(
+                self.experimental.bpm_history, latest_s, segment)
+            spo2_mean = _rolling_mean_by_seconds(
+                self.experimental.spo2_history, latest_s, segment)
             out = {
+                "mean60": dict(bpm_fw=fw_mean, bpm_py=py_mean,
+                               spo2=spo2_mean),
                 "history": list(self.history), "bpm_history": list(self.bpm_history), "sample_rate": rate,
                 "sample_age_s": sample_age,
                 "samples": self.samples, "missing": self.missing,
@@ -287,6 +354,8 @@ class PpgMonitor:
         if sample_age is None or sample_age >= 2.0:
             out["bpm"] = None
             out["fw_bpm_status"] = "Sem amostras recentes"
+            for metric in out["mean60"].values():
+                metric.update(value=None, status="indisponivel")
         # Telemetria interrompida nao pode manter valores experimentais atuais.
         # Historicos ficam disponiveis para diagnostico (nenhum RAW apagado).
         if sample_age is None or sample_age >= 2.0:
