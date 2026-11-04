@@ -66,6 +66,20 @@ class Ppg25HzValidationTests(unittest.TestCase):
         self.assertFalse(result["windows"][0]["complete"])
         self.assertEqual(result["threshold_sweep"][0]["eligible_windows"],0)
 
+    def test_missing_seq_or_timestamp_gap_is_not_called_complete(self):
+        rows=[sample(i,100000+i*400,110000+i*400) for i in range(3)]
+        rows[2]["seq"]=5
+        result=analyze_capture(rows+[window_event(3)])
+        self.assertFalse(result["windows"][0]["seq_contiguous"])
+        self.assertFalse(result["windows"][0]["complete"])
+        self.assertEqual(result["threshold_sweep"][0]["eligible_windows"],0)
+
+        rows=[sample(i,100000+i*400,110000+i*400) for i in range(3)]
+        rows[2]["t_ms"]+=150
+        result=analyze_capture(rows+[window_event(3)])
+        self.assertFalse(result["windows"][0]["timing_ok"])
+        self.assertFalse(result["windows"][0]["complete"])
+
     def test_8s_experimental_bpm_is_opt_in_research_only(self):
         rng=random.Random(102)
         rows=[]
