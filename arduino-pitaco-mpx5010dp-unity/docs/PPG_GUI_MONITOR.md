@@ -178,10 +178,15 @@ para habilitar/desabilitar BPM e SpO₂ experimentais. A janela mostra os
 históricos diretamente quando aberta, usando as mensagens `sample` RED/IR
 já recebidas por USB ou BLE.
 
-A tentativa de cálculo ocorre aproximadamente a cada segundo; um número
-só é exibido após janela contínua suficiente e critérios experimentais
-de G1, contato e integridade. Sem qualidade ou sem dados recentes, os
-indicadores mostram `--` e os gráficos mantêm lacunas, sem inventar valores.
+A tentativa de cálculo ocorre a cada ~400 ms com janela progressiva:
+a primeira estimativa pode aparecer após aproximadamente 3 segundos de
+contato e dados contínuos; a janela móvel cresce até 8 segundos.
+O G1 deixa de bloquear **exclusivamente a estimativa Python de bancada**:
+se estiver pendente ou reprovado, o estado indica
+`SOMENTE DIAGNOSTICO`, não uma medição qualificada. O firmware continua
+exigindo G1 aprovado para aceitar seu BPM. Sem contato, com baixa AC,
+amostragem irregular ou sinal inutilizável, os indicadores mostram `--`
+e os gráficos mantêm lacunas, sem inventar valores.
 Não altera GATT, firmware, sensor, Gate 01, pressão, CSV RAW ou Unity.
 
 **Apresentacao:** legenda `FW qualificado` (roxo) = BPM fornecido pelo
@@ -193,12 +198,16 @@ medição. SpO₂ experimental **não é dispositivo médico nem prova de precis
 
 ### Como o cálculo é feito (`pitaco_bridge/experimental.py`)
 
-1. Receber pares sincronizados RED/IR e `t_ms` (~25 Hz); descartar para
-   estimativa qualquer amostra sem contato ou sem `sqi.g1=true`.
-   Amostras inválidas permanecem preservadas no gráfico RAW e CSV.
-2. Formar 8 segundos contínuos de dados (pelo menos 7,5 s, 160 amostras),
-   testar continuidade, amostragem e presença de sinal óptico.
-   Mudança de contato ou gap reinicia a janela experimental.
+1. Receber pares RED/IR e `t_ms` (~25 Hz); exigir contato óptico, amostras
+   válidas e amplitude plausível. **O G1 é exibido como diagnóstico, mas não
+   bloqueia a estimativa experimental Python**; sua rejeição nunca é tratada
+   como PASS. Amostras inválidas permanecem no RAW e CSV.
+2. Começar com pelo menos ~3 s contínuos (70 amostras e 3 s reais) e
+   expandir progressivamente até 8 s, testando continuidade, taxa de
+   amostragem e sinal óptico. O limite de autocorrelação `len(y)//3`
+   exige cerca de três períodos para a frequência estimada: ritmos mais
+   lentos precisam naturalmente de mais observação. Falha de contato,
+   timestamps inválidos ou gap de sequência reiniciam a janela.
 3. Para cada canal, remover DC variável por média móvel centrada de
    aproximadamente 1 s e suavizar com 3 pontos para estimar componente AC.
 4. Estimar BPM pelo atraso de maior autocorrelação normalizada do IR
@@ -215,9 +224,9 @@ medição. SpO₂ experimental **não é dispositivo médico nem prova de precis
    para o encaixe óptico nem para o dispositivo usado**. Um valor plausível
    não equivale a aferição de saturação.
 
-A atualização ocorre a cada ~1 segundo de telemetria; todo cálculo é no
+A atualização ocorre a cada ~400 ms de telemetria; todo cálculo é no
 PC, independente do filtro do pneumógrafo, automaticamente durante a
-coleta válida, sem botão de habilitação. O resultado experimental **não é transmitido à Unity**. Esta versão da ponte
+coleta com contato válido, sem botão de habilitação. O resultado experimental **não é transmitido à Unity**. Esta versão da ponte
 mantém somente a COM virtual de pressão/fluxo para o jogo respiratório.
 O monitor recebe RED/IR, BPM e SQI pelo JSON do ESP32, sem COM adicional.
 
@@ -258,17 +267,20 @@ O painel **Monitor Cardíaco / SpO₂** tem três gráficos de cima para baixo:
    (função SparkFun `checkForBeat`, `bpm_valid=true`); curva amarela =
    BPM **experimental** por autocorrelação do IR calculada no Python
    (automaticamente, após janela válida). Valores do eixo vertical são escala,
-   não medição atual. **No canto superior esquerdo**, os dois números
-   aparecem em destaque como `ESP32: xx.x BPM` e
-   `Python EXP.: xx.x BPM`; quando não existem, mostram `--`.
-3. **SpO₂ EXP.:** estimativa ilustrativa não calibrada. Exibida como
-   indisponível (`--`) quando faltam critérios de sinal.
+   não medição atual. Os números continuam no gráfico e aparecem também
+   no **primeiro cartão do canto superior direito**, com as duas fontes
+   identificadas (`ESP32` e `Python EXP.`); sem valor, mostram `--`.
+3. **SpO₂ EXP.:** estimativa ilustrativa não calibrada. O **segundo cartão
+   do canto superior direito** mostra o valor instantâneo (ou `--`);
+   o gráfico inferior mantém o histórico, com lacunas sem sinal.
 
 **Por que pode ficar `--` mesmo com G1 PASS?** O G1 verifica integridade
 básica de janela e contato, **não** comprova batimentos detectáveis.
 O firmware só emite BPM após detecções plausíveis de `checkForBeat`,
-janela G1 válida e batimento recente. O analisador Python fica sempre ativo e exige G1+contato e cerca de
-8 s de dados contínuos; pode rejeitar baixa AC, irregularidade ou movimento.
+janela G1 válida e batimento recente. O analisador Python é automático,
+dispensa o PASS de G1 apenas para **teste diagnóstico** e começa a estimar
+a partir de ~3 s conforme o ritmo; pode rejeitar baixa AC,
+irregularidade, incoerência RED/IR ou movimento.
 A linha superior agora indica o motivo do firmware:
 `Aguardando G1`, `G1 reprovado`, `Sem contato`,
 `Firmware ainda sem BPM valido`, `BPM firmware valido` ou
