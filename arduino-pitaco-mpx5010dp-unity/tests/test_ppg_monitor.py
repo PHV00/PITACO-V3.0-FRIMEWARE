@@ -8,8 +8,8 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from pitaco24_monitor import PpgMonitor
-from pitaco24_protocol import parse_pitaco_line
+from pitaco_bridge.monitor import PpgMonitor
+from pitaco_bridge.protocol import parse_pitaco_line
 
 
 def sample(seq=1, t_ms=1000, red=105000, ir=117000,
