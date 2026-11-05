@@ -1,46 +1,54 @@
-name: PITACO 2.4 USB BLE JSON + ESP32-C3 build
+name: PITACO 2.4 — host, protocolo, bridge e build ESP32-C3
 on:
   push:
-    branches: [feature/pitaco-24-simple-json-usb-ble-bpm, feature/ppg-sqi-bpm-25hz-validation]
+    branches: [main, fix/pitaco24-layout-imports-ci]
   pull_request:
     paths:
-      - 'arduino-pitaco-mpx5010dp-unity/**'
-      - 'frimeware2.5/**'
+      - 'frimeware2.4/**'
+      - 'arduino-pitaco-mpx5010dp-ble/**'
+      - 'arduino-pitaco-ble-legancy/**'
+      - 'test/**'
+      - 'docs/**'
+      - 'requirements.txt'
       - '.github/workflows/pitaco24-g1.yml'
 
 jobs:
   host:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: arduino-pitaco-mpx5010dp-ble
     steps:
       - uses: actions/checkout@v4
-      - name: Gate 01 compilado usando o mesmo .ino da placa
+      - name: Gate 01 C++ com o mesmo modulo do firmware
         run: |
-          cd arduino-pitaco-mpx5010dp-unity
-          g++ -std=c++11 -Wall -Wextra -Werror tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1
+          g++ -std=c++11 -Wall -Wextra -Werror test/test_sqi_gate1.cpp -o /tmp/pitaco_g1
           /tmp/pitaco_g1
-      - name: JSON USB e fragmentacao BLE
+      - name: Testes host de BLE/USB, G1, PPG e GUI
         run: |
-          cd arduino-pitaco-mpx5010dp-unity
-          python3 -m unittest discover -s tests -p 'test_*.py'
-      - name: Sintaxe Python da ponte e do coletor
+          python3 -m unittest discover -s test -p 'test_*.py'
+      - name: Imports, sintaxe e entradas de ferramentas
         run: |
-          python3 -m py_compile arduino-pitaco-mpx5010dp-unity/ble_client_mpx5010dp.py
-          python3 -m py_compile arduino-pitaco-mpx5010dp-unity/pitaco_experimental/pitaco24_ppg_probe.py
-          python3 -m compileall -q arduino-pitaco-mpx5010dp-unity/pitaco_bridge
+          python3 -m py_compile arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py
+          python3 -m compileall -q arduino-pitaco-mpx5010dp-ble/pitaco_bridge
+          python3 -m compileall -q arduino-pitaco-mpx5010dp-ble/pitaco_experimental
+          python3 arduino-pitaco-mpx5010dp-ble/pitaco_experimental/pitaco24_ppg_probe.py --help
+          python3 arduino-pitaco-mpx5010dp-ble/pitaco_experimental/analyze_ppg_25hz.py --help
 
   esp32c3:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-arduino-cli@v2
-      - name: Instalar core ESP32 e biblioteca MAX30105 SparkFun
+      - name: Instalar ESP32 e biblioteca de compatibilidade
         run: |
           arduino-cli config init
           arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli lib install "SparkFun MAX3010x Pulse and Proximity Sensor Library"
-      - name: Compilar sketch completo para ESP32-C3
+      - name: Compilar firmware canonico 2.4 para ESP32-C3
         run: |
-          arduino-cli compile --fqbn esp32:esp32:esp32c3 arduino-pitaco-mpx5010dp-unity
-          arduino-cli compile --fqbn esp32:esp32:esp32c3 frimeware2.5
+          arduino-cli compile --fqbn esp32:esp32:esp32c3 frimeware2.4
+      - name: Compilar firmware legado ESP32
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32 arduino-pitaco-ble-legancy

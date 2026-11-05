@@ -1,6 +1,8 @@
 # Capturas de bancada do PITACO 2.4 (nao sao codigo-fonte)
-arduino-pitaco-mpx5010dp-unity/*.csv
-arduino-pitaco-mpx5010dp-unity/*.log
+arduino-pitaco-mpx5010dp-ble/*.csv
+arduino-pitaco-mpx5010dp-ble/pitaco_experimental/*.csv
+arduino-pitaco-mpx5010dp-ble/*.log
+arduino-pitaco-mpx5010dp-ble/pitaco_experimental/*.log
 
 # Ambientes, caches e artefatos Python
 .venv/
