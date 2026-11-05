@@ -32,3 +32,16 @@ def encode_pitaco24_json(line):
     if len(payload) > MAX_UNITY_JSON_BYTES:
         return None
     return payload + b"\r\n"
+
+
+def route_combo_unity_command(data):
+    """Separa a sondagem 'e' dos comandos reais ao ESP32.
+
+    A identificacao C ocorre exclusivamente na Bridge; um 'e' fisico
+    dispararia 'echop' do firmware, ambiguo para o receptor legado A.
+    """
+    if not isinstance(data, bytes):
+        raise TypeError("expected bytes")
+    response = PITACO24_ECHO if b"e" in data.lower() else None
+    forward = bytes(b for b in data if b not in (ord("e"), ord("E")))
+    return response, forward
