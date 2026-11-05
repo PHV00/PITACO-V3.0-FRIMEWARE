@@ -7,6 +7,7 @@ import unittest
 
 from pitaco_bridge.game_protocol import (
     GAME_OUTPUT_PITACO24_JSON, PITACO24_ECHO, encode_pitaco24_json,
+    route_combo_unity_command,
 )
 
 
@@ -39,6 +40,15 @@ class Pitaco24GameProtocolTest(unittest.TestCase):
                     "é"):
             self.assertIsNone(encode_pitaco24_json(raw), raw)
 
+
+    def test_handshake_is_answered_in_bridge_only(self):
+        reply, forwarded = route_combo_unity_command(b"e")
+        self.assertEqual(reply, b"echo2.4p\r\n")
+        self.assertEqual(forwarded, b"")
+        self.assertEqual(route_combo_unity_command(b"r\n"), (None, b"r\n"))
+        self.assertEqual(route_combo_unity_command(b"er\n"),
+                         (PITACO24_ECHO, b"r\n"))
+        self.assertEqual(route_combo_unity_command(b"f"), (None, b"f"))
 
 if __name__ == "__main__":
     unittest.main()
