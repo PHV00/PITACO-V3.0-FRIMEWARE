@@ -12,6 +12,7 @@ import time
 import struct
 import json
 from ..protocol import parse_pitaco_line, BleJsonlBuffer
+from ..game_protocol import GAME_OUTPUT_PITACO24_JSON, PITACO24_ECHO, encode_pitaco24_json
 from ..monitor import PpgMonitor
 from ..configuration import get_config_path, DEFAULT_PROFILE_DATA, DEFAULT_CONFIG, load_config
 from ..ports import get_all_com_ports
@@ -274,6 +275,9 @@ is_sampling = False
 client = None
 ser = None
 ser_device = None
+# Modo C: congela-se a escolha na conexao; callbacks USB/BLE nao acessam Tk.
+combo_mode_active = False
+game_write_lock = threading.Lock()
 ble_ppg_lines = BleJsonlBuffer()
 ppg_monitor = PpgMonitor(max_points=850)  # ~34 s de RAW a 25 Hz
 ble_loop = None
@@ -417,7 +421,7 @@ ctk.CTkLabel(output_frame, text="Saída ao jogo:", anchor="w").pack(side="left",
 output_mode_var = ctk.StringVar(value=config_data.get("output_mode", "Pressão relativa (Pa)"))
 output_menu = ctk.CTkOptionMenu(
     output_frame, variable=output_mode_var,
-    values=["Pressão relativa (Pa)", "Fluxo estimado (L/min)"],
+    values=["Pressão relativa (Pa)", "Fluxo estimado (L/min)", GAME_OUTPUT_PITACO24_JSON],
     command=lambda _choice: save_config(), width=185
 )
 output_menu.pack(side="right")
@@ -1045,6 +1049,15 @@ def process_pitaco_line(line_str, allow_pressure=True, source="USB"):
         return False
     kind = msg.get("type")
     ppg_monitor.observe(msg, source=source)
+    if combo_mode_active and kind in ("sample", "g1") and ser and ser.is_open:
+        # Nao calcular FC/SpO2 na bridge: entregar RED/IR integrais ao Unity.
+        packet = encode_pitaco24_json(line_str)
+        if packet is not None:
+            try:
+                with game_write_lock:
+                    ser.write(packet)
+            except (OSError, serial.SerialException) as exc:
+                log(f"Falha ao encaminhar JSON PITACO 2.4 ao Unity: {exc}")
     if kind == "pressure":
         if allow_pressure:
             update_pressure_from_device(msg["mpx5010dp"]["pressure_pa"])
@@ -1087,7 +1100,7 @@ def notification_handler(sender, data):
                 if line_str.startswith("zero_"):
                     root.after(0, lambda msg=line_str: (log("[BLE <- ESP32] " + msg), zero_status(msg)))
                 elif line_str == "echop":
-                    if ser and ser.is_open:
+                    if not combo_mode_active and ser and ser.is_open:
                         ser.write(b"echop\r\n")
                 else:
                     # Se não for echo, trata como número de pressão (Pa)
@@ -1106,7 +1119,7 @@ def interpolation_loop():
     global last_value, target_value, last_update_time, running, ser, is_sampling
     output_interval = 0.01 
     while running:
-        if is_sampling and ser and ser.is_open: 
+        if is_sampling and not combo_mode_active and ser and ser.is_open: 
             now = time.time()
             elapsed = now - last_update_time
             fraction = min(elapsed / update_interval, 1.0)
@@ -1141,10 +1154,23 @@ def serial_read_loop():
                     except Exception:
                         pass
 
+                    # No modo C, a bridge identifica a COM virtual por si.
+                    # Nao encaminha 'e' ao firmware: o ESP32 responderia
+                    # 'echop' e poderia confundir o receptor legado A.
+                    forward_data = data
+                    if combo_mode_active:
+                        if b"e" in data.lower():
+                            try:
+                                with game_write_lock:
+                                    ser.write(PITACO24_ECHO)
+                            except (OSError, serial.SerialException) as exc:
+                                log(f"Erro na resposta echo2.4p: {exc}")
+                        forward_data = bytes(byte for byte in data if byte not in (ord('e'), ord('E')))
+
                     # Se conectado via BLE, repassa por BLE
-                    if client and client.is_connected:
+                    if forward_data and client and client.is_connected:
                         fut = asyncio.run_coroutine_threadsafe(
-                            client.write_gatt_char(CHARACTERISTIC_UUID, data, False),
+                            client.write_gatt_char(CHARACTERISTIC_UUID, forward_data, False),
                             ble_loop
                         )
                         try:
@@ -1153,9 +1179,9 @@ def serial_read_loop():
                             log(f"Erro escrita BLE: {e}")
 
                     # Se conectado via USB, repassa para a porta USB física do ESP32
-                    elif ser_device and ser_device.is_open:
+                    elif forward_data and ser_device and ser_device.is_open:
                         try:
-                            ser_device.write(data)
+                            ser_device.write(forward_data)
                         except Exception as e:
                             log(f"Erro escrita USB ESP32: {e}")
             else:
@@ -1176,7 +1202,7 @@ def usb_read_device_loop():
                         if line_str.startswith("zero_"):
                             root.after(0, lambda msg=line_str: (log("[USB <- ESP32] " + msg), zero_status(msg)))
                         elif line_str == "echop":
-                            if ser and ser.is_open:
+                            if not combo_mode_active and ser and ser.is_open:
                                 ser.write(b"echop\r\n")
                         else:
                             try:
@@ -1257,9 +1283,10 @@ async def ble_bridge():
         root.after(0, lambda: ppg_graph_btn.configure(state="disabled"))
 
 def start_bridge():
-    global running, ser, ser_device, ble_loop, ble_loop_thread, is_sampling
+    global running, ser, ser_device, ble_loop, ble_loop_thread, is_sampling, combo_mode_active
 
     if running: return
+    combo_mode_active = output_mode_var.get() == GAME_OUTPUT_PITACO24_JSON
     ppg_monitor.reset()  # nao misturar sessoes USB, BLE ou reconexoes
     
     mode = conn_mode_var.get()
@@ -1289,6 +1316,7 @@ def start_bridge():
     port_combo.configure(state="disabled")
     device_port_combo.configure(state="disabled")
     conn_mode_segmented.configure(state="disabled")
+    output_menu.configure(state="disabled")
 
     if mode == "Bluetooth":
         log("Iniciando conexão sem fio (Bluetooth)...")
@@ -1349,6 +1377,7 @@ def stop_bridge():
     port_combo.configure(state="normal")
     device_port_combo.configure(state="normal")
     conn_mode_segmented.configure(state="normal")
+    output_menu.configure(state="normal")
     calib_btn.configure(state="disabled")
     zero_btn.configure(state="disabled")
     set_indicator(status_serial, False)
