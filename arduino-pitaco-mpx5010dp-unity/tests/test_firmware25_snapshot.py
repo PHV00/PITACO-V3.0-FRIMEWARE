@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ORIGINAL = ROOT / "arduino-pitaco-mpx5010dp-unity" / "firmware" / "pitaco_2_4"
 VERSION25 = ROOT / "frimeware2.5"
 TABS = ["pitaco_2_4.ino","gate_01_integrity.ino","pitaco_ble_ota.ino","pitaco_commands.ino","pitaco_ppg_bpm.ino","pitaco_ppg_contact_sqi.ino","pitaco_ppg_json.ino","pitaco_ppg_sensor.ino","pitaco_respiration.ino"]
-VENDOR = ["src/vendor_sparkfun_max3010x/LICENSE.md","src/vendor_sparkfun_max3010x/MAX30105.cpp","src/vendor_sparkfun_max3010x/MAX30105.h","src/vendor_sparkfun_max3010x/README.md","src/vendor_sparkfun_max3010x/heartRate.cpp","src/vendor_sparkfun_max3010x/heartRate.h"]
+VENDOR = ["src/vendor_sparkfun_max3010x/LICENSE.md","src/vendor_sparkfun_max3010x/MAX30105.cpp","src/vendor_sparkfun_max3010x/MAX30105.h","src/vendor_sparkfun_max3010x/heartRate.cpp","src/vendor_sparkfun_max3010x/heartRate.h"]
 
 
 class Firmware25Parity(unittest.TestCase):
@@ -28,6 +28,8 @@ class Firmware25Parity(unittest.TestCase):
                                  (VERSION25 / name).read_bytes())
 
     def test_docs_available(self):
+        # README de cada sketch pode ter instrucoes de compilacao diferentes.
+        self.assertTrue((ORIGINAL / "src/vendor_sparkfun_max3010x/README.md").is_file())
         for name in ("README.md", "docs/SOC_INO_TABS.md", "docs/GATE_01.md"):
             self.assertTrue((VERSION25 / name).is_file())
 
