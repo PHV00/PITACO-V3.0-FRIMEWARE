@@ -10,7 +10,8 @@
 #include "src/vendor_sparkfun_max3010x/heartRate.h" // checkForBeat(IR)
 #include <stdint.h>
 
-// SoC por abas .ino: o Arduino concatena os arquivos no mesmo sketch.
+// SoC organizado em modulos .ino nas subpastas; includes explicitos abaixo.
+// O Arduino nao concatena automaticamente .ino em subdiretorios.
 // Configuracoes e estados globais compartilhados permanecem aqui.
 void g1Reset();
 void g1Add(uint32_t red, uint32_t ir);
@@ -190,3 +191,14 @@ void loop() {
   PollPressureSampling();
   yield(); // libera a task
 }
+
+// Implementacoes de cada modulo: manter esta ordem (ordem do sketch original).
+// Inclusao textual unica; nenhuma dessas abas deve ser compilada separadamente.
+#include "sqi/gate_01_integrity.ino"
+#include "communication/pitaco_ble_ota.ino"
+#include "communication/pitaco_commands.ino"
+#include "processing/pitaco_ppg_bpm.ino"
+#include "processing/pitaco_ppg_contact_sqi.ino"
+#include "communication/pitaco_ppg_json.ino"
+#include "sensors/pitaco_ppg_sensor.ino"
+#include "sensors/pitaco_respiration.ino"
