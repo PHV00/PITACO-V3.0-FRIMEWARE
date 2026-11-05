@@ -1,7 +1,7 @@
 name: PITACO 2.4 USB BLE JSON + ESP32-C3 build
 on:
   push:
-    branches: [feature/pitaco-24-simple-json-usb-ble-bpm, feature/ppg-sqi-bpm-25hz-validation]
+    branches: [main, fix/pitaco24-layout-imports-ci, feature/ppg-sqi-bpm-25hz-validation]
   pull_request:
     paths:
       - 'arduino-pitaco-mpx5010dp-unity/**'
@@ -26,6 +26,8 @@ jobs:
         run: |
           python3 -m py_compile arduino-pitaco-mpx5010dp-unity/ble_client_mpx5010dp.py
           python3 -m py_compile arduino-pitaco-mpx5010dp-unity/pitaco_experimental/pitaco24_ppg_probe.py
+          python3 arduino-pitaco-mpx5010dp-unity/pitaco_experimental/pitaco24_ppg_probe.py --help
+          python3 arduino-pitaco-mpx5010dp-unity/pitaco_experimental/analyze_ppg_25hz.py --help
           python3 -m compileall -q arduino-pitaco-mpx5010dp-unity/pitaco_bridge
 
   esp32c3:
@@ -42,5 +44,5 @@ jobs:
           arduino-cli lib install "SparkFun MAX3010x Pulse and Proximity Sensor Library"
       - name: Compilar sketch completo para ESP32-C3
         run: |
-          arduino-cli compile --fqbn esp32:esp32:esp32c3 arduino-pitaco-mpx5010dp-unity
+          arduino-cli compile --fqbn esp32:esp32:esp32c3 arduino-pitaco-mpx5010dp-unity/firmware/pitaco_2_4
           arduino-cli compile --fqbn esp32:esp32:esp32c3 frimeware2.5

@@ -3,7 +3,12 @@
 import argparse
 import csv
 import time
-from pitaco24_protocol import parse_pitaco_line
+import sys
+from pathlib import Path
+
+# Executado como script direto: raiz do projeto precisa estar em sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from pitaco_bridge.protocol import parse_pitaco_line
 
 
 def main():
