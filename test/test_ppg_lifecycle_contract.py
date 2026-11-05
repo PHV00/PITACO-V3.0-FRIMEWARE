@@ -7,16 +7,16 @@ from pathlib import Path
 import re
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1] / "firmware" / "pitaco_2_4"
-MAIN = (ROOT / "pitaco_2_4.ino").read_text(encoding="utf-8")
-SENSOR = (ROOT / "pitaco_ppg_sensor.ino").read_text(encoding="utf-8")
-CONTACT = (ROOT / "pitaco_ppg_contact_sqi.ino").read_text(encoding="utf-8")
-BPM = (ROOT / "pitaco_ppg_bpm.ino").read_text(encoding="utf-8")
-JSON = (ROOT / "pitaco_ppg_json.ino").read_text(encoding="utf-8")
-TRANSPORT = (ROOT / "pitaco_ble_ota.ino").read_text(encoding="utf-8")
-COMMANDS = (ROOT / "pitaco_commands.ino").read_text(encoding="utf-8")
-RESPIRATION = (ROOT / "pitaco_respiration.ino").read_text(encoding="utf-8")
-G1 = (ROOT / "gate_01_integrity.ino").read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parents[1] / "frimeware2.4"
+MAIN = (ROOT / "frimeware2.4.ino").read_text(encoding="utf-8")
+SENSOR = (ROOT / "sensors/pitaco_ppg_sensor.ino").read_text(encoding="utf-8")
+CONTACT = (ROOT / "processing/pitaco_ppg_contact_sqi.ino").read_text(encoding="utf-8")
+BPM = (ROOT / "processing/pitaco_ppg_bpm.ino").read_text(encoding="utf-8")
+JSON = (ROOT / "communication/pitaco_ppg_json.ino").read_text(encoding="utf-8")
+TRANSPORT = (ROOT / "communication/pitaco_ble_ota.ino").read_text(encoding="utf-8")
+COMMANDS = (ROOT / "communication/pitaco_commands.ino").read_text(encoding="utf-8")
+RESPIRATION = (ROOT / "sensors/pitaco_respiration.ino").read_text(encoding="utf-8")
+G1 = (ROOT / "sqi/gate_01_integrity.ino").read_text(encoding="utf-8")
 
 
 def body(source, name, return_type="void"):

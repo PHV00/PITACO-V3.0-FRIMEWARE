@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1]))
+sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[1] / "arduino-pitaco-mpx5010dp-ble"))
 from pitaco_bridge.ppg_validation_25hz import (
     analyze_capture, read_capture, read_labels, sparkfun_fir_gain, threshold_sweep
 )

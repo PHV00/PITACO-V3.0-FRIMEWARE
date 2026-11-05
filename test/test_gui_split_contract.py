@@ -3,8 +3,8 @@ import ast
 import pathlib
 import unittest
 
-GUI_DIR = pathlib.Path(__file__).resolve().parents[1] / "pitaco_bridge" / "gui"
-ENTRY = pathlib.Path(__file__).resolve().parents[1] / "ble_client_mpx5010dp.py"
+GUI_DIR = pathlib.Path(__file__).resolve().parents[1] / "arduino-pitaco-mpx5010dp-ble" / "pitaco_bridge" / "gui"
+ENTRY = pathlib.Path(__file__).resolve().parents[1] / "arduino-pitaco-mpx5010dp-ble" / "ble_client_mpx5010dp.py"
 
 
 def names(path):

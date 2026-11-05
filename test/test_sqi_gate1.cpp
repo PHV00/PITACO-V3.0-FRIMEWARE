@@ -1,5 +1,5 @@
 // O mesmo Gate usado pelo firmware e compilado no host como C++ puro.
-#include "../firmware/pitaco_2_4/gate_01_integrity.ino"
+#include "../frimeware2.4/sqi/gate_01_integrity.ino"
 #include <assert.h>
 #include <stdio.h>
 

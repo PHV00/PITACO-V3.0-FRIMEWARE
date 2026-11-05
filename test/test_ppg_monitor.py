@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "arduino-pitaco-mpx5010dp-ble"))
 
 from pitaco_bridge.monitor import PpgMonitor, _rolling_mean_by_seconds
 from pitaco_bridge.protocol import parse_pitaco_line
@@ -209,7 +209,7 @@ class PpgMonitorTests(unittest.TestCase):
         self.assertEqual(after["mean60"]["bpm_fw"]["status"], "parcial")
 
     def test_gui_wires_both_streams_without_touching_firmware(self):
-        gui_dir = (pathlib.Path(__file__).resolve().parents[1] /
+        gui_dir = (pathlib.Path(__file__).resolve().parents[1] / "arduino-pitaco-mpx5010dp-ble" /
                    "pitaco_bridge" / "gui")
         main_source = (gui_dir / "main_window.py").read_text(encoding="utf-8")
         pneumo_source = (gui_dir / "pneumo_view.py").read_text(encoding="utf-8")
