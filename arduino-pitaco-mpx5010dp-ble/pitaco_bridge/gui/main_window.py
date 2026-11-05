@@ -12,7 +12,7 @@ import time
 import struct
 import json
 from ..protocol import parse_pitaco_line, BleJsonlBuffer
-from ..game_protocol import GAME_OUTPUT_PITACO24_JSON, PITACO24_ECHO, encode_pitaco24_json
+from ..game_protocol import GAME_OUTPUT_PITACO24_JSON, encode_pitaco24_json, route_combo_unity_command
 from ..monitor import PpgMonitor
 from ..configuration import get_config_path, DEFAULT_PROFILE_DATA, DEFAULT_CONFIG, load_config
 from ..ports import get_all_com_ports
@@ -1159,13 +1159,13 @@ def serial_read_loop():
                     # 'echop' e poderia confundir o receptor legado A.
                     forward_data = data
                     if combo_mode_active:
-                        if b"e" in data.lower():
+                        response, forward_data = route_combo_unity_command(data)
+                        if response:
                             try:
                                 with game_write_lock:
-                                    ser.write(PITACO24_ECHO)
+                                    ser.write(response)
                             except (OSError, serial.SerialException) as exc:
                                 log(f"Erro na resposta echo2.4p: {exc}")
-                        forward_data = bytes(byte for byte in data if byte not in (ord('e'), ord('E')))
 
                     # Se conectado via BLE, repassa por BLE
                     if forward_data and client and client.is_connected:
