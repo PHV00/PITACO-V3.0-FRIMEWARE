@@ -1,6 +1,6 @@
 # PITACO 2.4 — Separacao de responsabilidades (SoC) em abas `.ino`
 
-**Sketch atual:** `firmware/pitaco_2_4/` (referências de arquivos `.ino` nesta tabela são relativas a essa pasta).
+**Sketch atual:** `frimeware2.4/`, com um único orquestrador `.ino` na raiz e oito módulos `.ino` em `communication/`, `processing/`, `sensors/` e `sqi/`.
 
 **Escopo:** refatoracao **organizacional**, sem modificar algoritmos, calibracao,
 G1, BPM, FIFO, comandos, JSON, UUIDs ou taxas. O `setup()` e o `loop()`
@@ -11,20 +11,20 @@ nao ha Facade, Pipeline novo nem Dependency Injection.
 
 | Onde procurar | Arquivo | O que contem |
 | --- | --- | --- |
-| Entrada e coordenacao | `pitaco_2_4.ino` | includes, parametros, estados compartilhados, prototipos, `setup()`, `loop()` |
-| Comandos da sessao | `pitaco_commands.ino` | `ListenCommand`: e/echop, r, f, c, z |
-| BLE/USB e atualizacao | `pitaco_ble_ota.ino` | callbacks, `InitBleCommunication`, `SendStatus`, `SendPpgJson`, OTA |
-| Pressao respiratoria | `pitaco_respiration.ino` | `PollPressureSampling`, leitura MPX, EMA/media movel, calibracao, zero |
-| Aquisição PPG | `pitaco_ppg_sensor.ino` | `InitMAX30105`, `PollMAX30105`, FIFO64, integridade I2C, estados STOPPED/COLLECTING |
-| Contato e janela G1 | `pitaco_ppg_contact_sqi.ino` | `ResetPpgContact`, `UpdatePpgContact`, `PollPpgGateWindow` |
-| Matematica G1 | `gate_01_integrity.ino` | `g1Reset`, `g1Add`, `g1Evaluate`, thresholds (incl. 500 ADC) |
-| Frequencia cardiaca | `pitaco_ppg_bpm.ino` | `ProcessPpgBeat`, `IsPpgBpmValid`; chama SparkFun `checkForBeat(IR >> 3)` |
-| Formato do PPG | `pitaco_ppg_json.ino` | `PublishPpgSample`, `SendG1Json`, estrutura JSONL |
+| Entrada e coordenacao | `frimeware2.4.ino` | includes, parametros, estados compartilhados, prototipos, `setup()`, `loop()` |
+| Comandos da sessao | `communication/pitaco_commands.ino` | `ListenCommand`: e/echop, r, f, c, z |
+| BLE/USB e atualizacao | `communication/pitaco_ble_ota.ino` | callbacks, `InitBleCommunication`, `SendStatus`, `SendPpgJson`, OTA |
+| Pressao respiratoria | `sensors/pitaco_respiration.ino` | `PollPressureSampling`, leitura MPX, EMA/media movel, calibracao, zero |
+| Aquisição PPG | `sensors/pitaco_ppg_sensor.ino` | `InitMAX30105`, `PollMAX30105`, FIFO64, integridade I2C, estados STOPPED/COLLECTING |
+| Contato e janela G1 | `processing/pitaco_ppg_contact_sqi.ino` | `ResetPpgContact`, `UpdatePpgContact`, `PollPpgGateWindow` |
+| Matematica G1 | `sqi/gate_01_integrity.ino` | `g1Reset`, `g1Add`, `g1Evaluate`, thresholds (incl. 500 ADC) |
+| Frequencia cardiaca | `processing/pitaco_ppg_bpm.ino` | `ProcessPpgBeat`, `IsPpgBpmValid`; chama SparkFun `checkForBeat(IR >> 3)` |
+| Formato do PPG | `communication/pitaco_ppg_json.ino` | `PublishPpgSample`, `SendG1Json`, estrutura JSONL |
 
 Exemplos: para achar **`60000 / delta`**, abrir
 `pitaco_ppg_bpm.ino`. Para alterar a faixa de aceitacao RED, buscar
-`G1_MIN_RANGE` em `gate_01_integrity.ino` (**nao modificar sem experimento**).
-Para acompanhar overflow FIFO, abrir `pitaco_ppg_sensor.ino`.
+`G1_MIN_RANGE` em `sqi/gate_01_integrity.ino` (**nao modificar sem experimento**).
+Para acompanhar overflow FIFO, abrir `sensors/pitaco_ppg_sensor.ino`.
 Para alterar os UUIDs, procurar no cabeçalho do sketch principal; os
 callbacks e comandos de notificacao ficam em `pitaco_ble_ota.ino`.
 
@@ -58,12 +58,7 @@ ativa; a ausencia de contato invalida BPM e G1 efetivos.
 
 ## Por que SoC em abas `.ino` e viavel
 
-A ferramenta de compilacao Arduino concatena o arquivo principal e as demais
-abas `.ino` no **mesmo arquivo C++ de compilacao**. Com isso, a estrutura
-organiza responsabilidades por arquivo, mas as variaveis globais ainda sao
-compartilhadas entre as abas. Os prototipos entre abas ficam explicitamente
-declarados no arquivo principal para evitar depender de geracao automatica
-ou da ordem alfabetica das abas.
+O Arduino concatena automaticamente apenas os `.ino` da raiz de um sketch. **Como os módulos desta versão ficam em subpastas**, o orquestrador `frimeware2.4.ino` os inclui com `#include` explícitos e em ordem documentada, preservando a unidade de tradução original. Eles compartilham estados globais; protótipos de funções comuns permanecem no orquestrador. Não compilar os arquivos das subpastas como sketches independentes.
 
 **Limitacoes**: (1) nao existe encapsulamento real de dados, portanto
 qualquer aba pode modificar estados globais; (2) o Arduino pode autogerar
@@ -75,7 +70,7 @@ ainda exigiriam desacoplar hardware futuramente.
 
 ### Por que nao converter a SparkFun para `.ino`?
 
-A pasta `firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/` contem o **driver de terceiros**
+A pasta `frimeware2.4/src/vendor_sparkfun_max3010x/` contem o **driver de terceiros**
 `MAX30105.h/.cpp` e `heartRate.h/.cpp`. Esses arquivos sao compilados
 como biblioteca C++ do sketch e possuem estruturas e definicoes que
 nao devem ser simplesmente renomeadas para `.ino`. A versao local inclui
@@ -87,7 +82,7 @@ o driver C++ local e mantido intacto.
 
 ## Escopo deliberadamente nao alterado
 
-- Taxas: MPX ~20 Hz, MAX30102 100 Hz com média FIFO 4 (~25 pares/s).
+- Taxas: MPX ~20 Hz, MAX30105 100 Hz com média FIFO 4 (~25 pares/s).
 - G1: 5 s, limite de 500 ADC, marcacao de gap, contato e validacao.
 - Detector: FIR da SparkFun, `IR >> 3`, 35..200 BPM, suavizacao 0.7/0.3.
 - FIFO: 64 posicoes no driver, recuperação e telemetria de erro I2C.
@@ -96,8 +91,8 @@ o driver C++ local e mantido intacto.
 
 ## Validacao requerida antes de promover
 
-1. `g++ -std=c++11 -Wall -Wextra -Werror tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1`;
-2. `python3 -m unittest discover -s tests -p 'test_*.py'`, incluindo
+1. `g++ -std=c++11 -Wall -Wextra -Werror test/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1`;
+2. `python3 -m unittest discover -s test -p 'test_*.py'`, incluindo
    `test_ppg_lifecycle_contract.py` adaptado para abas;
 3. `arduino-cli compile --fqbn esp32:esp32:esp32c3 firmware/pitaco_2_4`;
 4. Com a placa e sensor: comparar log antigo/novo, mensagens, seq, G1,

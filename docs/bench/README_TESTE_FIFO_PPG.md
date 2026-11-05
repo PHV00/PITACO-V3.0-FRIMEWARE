@@ -187,7 +187,7 @@ COLLECTING -- overflow --> G1 GAP -> consumir amostras acessiveis
 
 1. Conferir a branch `feature/pitaco-24-simple-json-usb-ble-bpm` e
    sincronizar o repositorio com `git pull --ff-only`.
-2. Gravar o sketch principal com o arquivo `gate_01_integrity.ino`
+2. Gravar o sketch principal com o arquivo `frimeware2.4/sqi/gate_01_integrity.ino`
    na mesma pasta. Placa ESP32-C3, SparkFun MAX3010x instalada,
    USB CDC On Boot conforme hardware, 115200 baud.
 3. Abrir Monitor Serial, sem comecar a coleta. Verificar
@@ -283,7 +283,7 @@ X,PPG_DRIVER,impl=vendor_safe_fifo,sw_slots=64,sw_usable=63
    atualizar a branch `fix/ppg-sparkfun-buffer64-safe-fifo`.
 2. Habilitar saida detalhada de compilacao no Arduino IDE, compilar e
    carregar o firmware novo no ESP32-C3. Confirmar que o sketch usa
-   `firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/MAX30105.cpp`. Nao misturar binario
+   `frimeware2.4/src/vendor_sparkfun_max3010x/MAX30105.cpp`. Nao misturar binario
    anterior com o codigo atualizado.
 3. Iniciar sessao `r`; buscar `X,PPG_DRIVER` e confirmar 64/63.
    Se a compilacao indicar referencia indefinida a

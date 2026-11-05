@@ -107,8 +107,8 @@ e zero perda na fila CSV; dados sem esse requisito não provam perda zero.
 - A taxa recebida mostra comportamento combinado da placa, rádio,
   Windows e GUI. Para distinguir problema FIFO de BLE,
   confrontar com telemetria USB X,PPG_DIAG e seus contadores.
-- Testes de regressão: python -m unittest discover -s tests -p test_*.py
-- Sintaxe: python -m py_compile ble_client_mpx5010dp.py pitaco_bridge/monitor.py
+- Testes de regressão: python -m unittest discover -s test -p test_*.py
+- Sintaxe: python -m py_compile arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py arduino-pitaco-mpx5010dp-ble/pitaco_bridge/monitor.py
 - Validação física depende de teste do operador no Windows e ESP32-C3.
 
 ## Escolha de LEDs e BPM

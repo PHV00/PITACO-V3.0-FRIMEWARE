@@ -38,9 +38,9 @@ CSV bruto, type=sample + type=g1
        relatorio JSON auditavel
 ```
 
-**Fontes de implementacao:** `firmware/pitaco_2_4/gate_01_integrity.ino`,
+**Fontes de implementacao:** `frimeware2.4/sqi/gate_01_integrity.ino`,
 `pitaco_bridge/experimental.py`,
-`firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/heartRate.cpp`.
+`frimeware2.4/src/vendor_sparkfun_max3010x/heartRate.cpp`.
 A funcao `sparkfun_fir_gain()` reproduz a **resposta em frequencia do
 FIR de 23 taps** do arquivo SparkFun, NAO o detector completo
 (`averageDCEstimator` + zero crossing + limiares).
@@ -49,8 +49,8 @@ FIR de 23 taps** do arquivo SparkFun, NAO o detector completo
 
 ```powershell
 cd arduino-pitaco-mpx5010dp-unity
-python .\pitaco_experimental\analyze_ppg_25hz.py .\ppg_fifo64_60s.csv --output .\ppg_25hz_report.json
-python -m unittest discover -s tests -p "test_*.py"
+python .\arduino-pitaco-mpx5010dp-ble\pitaco_experimental\analyze_ppg_25hz.py .\ppg_fifo64_60s.csv --output .\ppg_25hz_report.json
+python -m unittest discover -s test -p "test_*.py"
 ```
 
 A captura deve ter colunas `type,seq,t_ms,red,ir,bpm_valid,g1,reason,samples,contact`.
@@ -128,7 +128,7 @@ mas nao testa as interrupcoes, deriva de tempo, I2C ou estado real do ESP32.
    G1, pois isso seria validacao circular.
 3. Criar CSV externo com colunas `window,usable` e executar:
    ```powershell
-   python .\pitaco_experimental\analyze_ppg_25hz.py .\ppg_fifo64_60s.csv --labels .\labels_ppg.csv --output .\relatorio.json
+   python .\arduino-pitaco-mpx5010dp-ble\pitaco_experimental\analyze_ppg_25hz.py .\ppg_fifo64_60s.csv --labels .\labels_ppg.csv --output .\relatorio.json
    ```
 4. Examinar TP/FP/FN/TN, sensibilidade e especificidade **somente
    para o criterio de range RED+IR**. Repetir em participantes e

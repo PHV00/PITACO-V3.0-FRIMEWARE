@@ -1,6 +1,6 @@
 # PITACO 2.4 — BLE, USB, OTA e ponte Unity
 
-**Fontes:** `../firmware/pitaco_2_4/pitaco_2_4.ino`, `../ble_client_mpx5010dp.py`, `../pitaco_bridge/gui/main_window.py` e `../pitaco_bridge/protocol.py`.
+**Fontes:** [`frimeware2.4/frimeware2.4.ino`](../../frimeware2.4/frimeware2.4.ino), [`ble_client_mpx5010dp.py`](../../arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py) e [`pitaco_bridge/protocol.py`](../../arduino-pitaco-mpx5010dp-ble/pitaco_bridge/protocol.py).
 
 ## GATT: manter compatibilidade com o original
 
@@ -64,7 +64,7 @@ O RAW RED/IR é transmitido mesmo quando G1 reprova, contanto que seja adquirido
 - X,PPG_DIAG: telemetria USB a cada 2 s; pode ser desativada por parâmetro.
 - **Não mudar** UUIDs nem forma das mensagens sem migrar a ponte e a Unity.
 
-Ver também ../README_BLE_TESTE.md (histórico e roteiro BLE) e ../README_TESTE_FIFO_PPG.md (ensaios da FIFO). Verificação host: python -m unittest discover -s tests -p test_*.py. A exatidão de BPM, SpO2 e equivalência BLE/USB ainda requer validação física.
+Ver também ../bench/README_BLE_TESTE.md (histórico e roteiro BLE) e ../bench/README_TESTE_FIFO_PPG.md (ensaios da FIFO). Verificação host: python -m unittest discover -s test -p test_*.py. A exatidão de BPM, SpO2 e equivalência BLE/USB ainda requer validação física.
 
 ## Middleware gráfico PPG (branch experimental isolada)
 

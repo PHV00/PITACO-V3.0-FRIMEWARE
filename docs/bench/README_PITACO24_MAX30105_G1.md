@@ -1,8 +1,8 @@
 # PITACO 2.4 — MPX5010DP + MAX30105 + G1 + BPM experimental
 
-**Local atual do firmware 2.4:** `firmware/pitaco_2_4/pitaco_2_4.ino` (oito outras abas `.ino` na mesma pasta). **Interface Python:** `ble_client_mpx5010dp.py` na raiz do projeto. Algumas referências adiante registram etapas históricas e não representam o layout de compilação atual.
+**Estrutura atual (caminhos relativos à raiz do repositório):** firmware `frimeware2.4/frimeware2.4.ino` e módulos `.ino` nas subpastas `sensors/`, `sqi/`, `processing/`, `communication/`; aplicação `arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py`. Os exemplos antigos abaixo podem registrar etapas históricas.
 
-**Documentação do baseline:** [Visão geral](docs/BASELINE.md) · [Gate 01 e suas funções](docs/GATE_01.md) · [BLE, USB e ponte Unity](docs/BLE_USB.md). Capturas CSV locais ficam fora do Git.
+**Documentação do baseline:** [Visão geral](../firmware/BASELINE.md) · [Gate 01 e suas funções](../firmware/GATE_01.md) · [BLE, USB e ponte Unity](../bridge/BLE_USB.md). Capturas CSV locais ficam fora do Git.
 
 
 ## Objetivo e arquitetura atual
@@ -11,16 +11,16 @@
 dois arquivos .ino. Seu restante conserva varias referencias historicas,
 inclusive a antiga COM virtual do oximetro, que **foi removida** do
 middleware. Para arquitetura e contratos correntes consulte:
-[mapa SoC de todas as abas .ino](docs/SOC_INO_TABS.md),
-[baseline atualizado](docs/BASELINE.md),
-[documentacao de BLE/USB](docs/BLE_USB.md) e
-[interface modular Python](docs/MIDDLEWARE_MODULAR.md).
+[mapa SoC de todas as abas .ino](../firmware/SOC_INO_TABS.md),
+[baseline atualizado](../firmware/BASELINE.md),
+[documentacao de BLE/USB](../bridge/BLE_USB.md) e
+[interface modular Python](../bridge/MIDDLEWARE_MODULAR.md).
 
-O ESP32-C3 continua lendo o MPX5010DP (~20 Hz) e o MAX30102
+O ESP32-C3 continua lendo o MPX5010DP (~20 Hz) e o MAX30105
 (~25 pares RED/IR por segundo). A implementacao agora usa **separacao
 de responsabilidades**: orquestrador principal, comandos, respiracao,
 BLE/OTA, aquisicao PPG, contato/G1, BPM e serializacao JSON em abas
-`.ino`. O driver SparkFun local permanece em `firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/`
+`.ino`. O driver SparkFun local permanece em `frimeware2.4/src/vendor_sparkfun_max3010x/`
 com a correcao FIFO64, pois o Arduino compila o driver de terceiros como
 `.h/.cpp`; nao o renomeamos para `.ino`. A interface Python atual
 preserva a unica COM do jogo respiratorio e nao abre segunda COM do
@@ -135,7 +135,7 @@ demonstracao de SpO2 ao paciente.
 
 ## Ponte Python / Unity
 
-Executar ble_client_mpx5010dp.py no Windows com as dependencias originais.
+Executar arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py no Windows com as dependencias originais.
 A interface agora oferece:
 - Porta ESP32 (USB), quando se usa cabo.
 - Porta Jogo (Virtual): canal respiratorio existente, com echop.
@@ -167,8 +167,8 @@ que continua recebendo seu formato antigo.
    e que a Unity recebe pressão e o BPM apenas no respectivo controlador.
 
 Teste host na pasta do firmware:
-g++ -std=c++11 -Wall -Wextra -Werror tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1
-python3 -m unittest discover -s tests -p 'test_*.py'
+g++ -std=c++11 -Wall -Wextra -Werror test/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1
+python3 -m unittest discover -s test -p 'test_*.py'
 
 ## Pendencias
 

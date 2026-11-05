@@ -1,6 +1,6 @@
 # SQI Gate 01 — contrato, parâmetros e funções
 
-**Implementação efetiva:** ../gate_01_integrity.ino. É um verificador de integridade básica de RED/IR (18 bits), não um filtro, reconstrutor de sinal ou estimador fisiológico. Ele não modifica nem descarta amostras; a aquisição e o envio JSONL são responsabilidade do orquestrador.
+**Implementação efetiva:** ../sqi/gate_01_integrity.ino. É um verificador de integridade básica de RED/IR (18 bits), não um filtro, reconstrutor de sinal ou estimador fisiológico. Ele não modifica nem descarta amostras; a aquisição e o envio JSONL são responsabilidade do orquestrador.
 
 ## Constantes atuais (provisórias)
 
@@ -51,4 +51,4 @@ PollMAX30105 chama g1Add para cada par. Aproximadamente a cada PPG_WINDOW_MS=500
 
 Mesmo com G1 false, os pares RED/IR brutos continuam sendo emitidos em type=sample, desde que adquiridos e transmitidos com sucesso. O detector de contato usa PPG_CONTACT_MIN=5000 e três amostras consecutivas; é pré-condição independente do G1.
 
-**Testes:** tests/test_sqi_gate1.cpp exercita o mesmo arquivo .ino sem duplicar sua lógica. O histórico de falhas e ensaios fica em ../README_TESTE_FIFO_PPG.md. Não relaxar thresholds com base apenas em percentuais PASS.
+**Testes:** test/test_sqi_gate1.cpp exercita o mesmo arquivo .ino sem duplicar sua lógica. O histórico de falhas e ensaios fica em ../bench/README_TESTE_FIFO_PPG.md. Não relaxar thresholds com base apenas em percentuais PASS.

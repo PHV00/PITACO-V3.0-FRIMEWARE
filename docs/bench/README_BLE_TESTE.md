@@ -1,6 +1,6 @@
 # PITACO 2.0 — teste BLE com MPX5010DP (experimental)
 
-**Nota sobre o layout atual:** sketch canônico em `firmware/pitaco_2_4/`; entrada Python na raiz `ble_client_mpx5010dp.py`; ferramentas em `pitaco_experimental/`.
+**Layout vigente:** firmware `frimeware2.4/`, programa Python `arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py`, ferramentas `arduino-pitaco-mpx5010dp-ble/pitaco_experimental/`. O documento é histórico; opções de CLI antigas podem não existir no launcher gráfico atual.
 
 Este teste usa o mesmo firmware da pasta, preservando firmware e cliente GUI legados.
 A leitura enviada pelo ESP32 ja e **pressao relativa em Pa**, assinada e com zona morta.
@@ -9,7 +9,7 @@ comprovam medicao fisica inspiratoria negativa pelo MPX5010DP.
 
 ## Arquivos
 
-- arduino-pitaco-mpx5010dp-unity.ino: firmware de teste ESP32-C3 com USB e BLE.
+- frimeware2.4.ino: firmware de teste ESP32-C3 com USB e BLE.
 - ble_client_mpx5010dp.py: interface grafica baseada no PITACO Bridge original, com BLE e Cabo USB.
 - O cliente GUI antigo, na pasta arduino-pitaco-ble, permanece **inalterado**.
   Ele usa uma estimativa de fluxo baseada em orificio; nao confundir com Pa.
@@ -24,7 +24,7 @@ Na pasta do novo arquivo (Windows), instale as dependencias da GUI original,
 por exemplo: customtkinter, pyserial, wmi, pywin32, bleak, pillow, matplotlib
 e esptool. Use Python compatível com o ambiente original.
 
-    python ble_client_mpx5010dp.py
+    python arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py
 
 Para testar SEM Unity: selecionar "Cabo USB", Porta ESP32 (USB) = COM3
 (ou a porta fisica correta), Porta Jogo = "Somente monitor" e clicar Conectar.
@@ -66,7 +66,7 @@ Instalar Python 3.10+ e dependencias:
 
 No terminal, dentro desta pasta:
 
-    python ble_client_mpx5010dp.py --seconds 30
+    python arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py --seconds 30
 
 O cliente busca PITACO V2.0, conecta, ativa NOTIFY, envia e, exige echop,
 envia r, mostra pressao relativa assinada por ~30s e encerra enviando f.
@@ -82,7 +82,7 @@ Saida ilustrativa:
 
 Para recalibrar o repouso, sem tocar no bocal na calibracao:
 
-    python ble_client_mpx5010dp.py --seconds 30 --calibrate
+    python arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py --seconds 30 --calibrate
 
 O comando c calcula uma nova referencia por cerca de 1,2s.
 ATENCAO: o firmware volta a usar referencia fixa de 100 Pa na proxima
@@ -93,7 +93,7 @@ sessao, se nao for enviado c novamente.
 Configurar par com0com funcional, por exemplo CNCA0 <-> CNCB0.
 Executar primeiro a ponte, usando uma extremidade:
 
-    python ble_client_mpx5010dp.py --bridge-port CNCA0
+    python arduino-pitaco-mpx5010dp-ble/ble_client_mpx5010dp.py --bridge-port CNCA0
 
 Iniciar I Blue It depois. O jogo deve identificar o PITACO na OUTRA
 extremidade (CNCB0), enviando e e recebendo echop. Comandos e/r/f/c

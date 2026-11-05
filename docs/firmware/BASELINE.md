@@ -2,35 +2,31 @@
 
 ## Arquitetura vigente — SoC em abas `.ino`
 
-**Raiz canônica do sketch:** `firmware/pitaco_2_4/`. O arquivo de entrada e as oito abas `.ino` ficam juntos nessa pasta. A documentação abaixo usa caminhos relativos à pasta `arduino-pitaco-mpx5010dp-unity/`.
+**Sketch canônico na raiz do repositório:** `frimeware2.4/frimeware2.4.ino`. Os oito módulos `.ino` ficam em subpastas temáticas e são incluídos explicitamente pelo orquestrador.
 
-O firmware autoral foi reorganizado por **Separation of Concerns**. A pasta do
-sketch agora contem um arquivo principal de orquestracao e abas de PPG,
-respiracao, BLE/OTA, comandos, BPM, contato/SQI e JSON. O Arduino concatena
-essas abas em uma so unidade C++, mantendo o comportamento do baseline;
-elas **nao sao bibliotecas independentes**.
+O firmware autoral foi organizado por **Separation of Concerns**: um orquestrador principal e módulos de PPG, respiração, BLE/OTA, comandos, BPM, contato/SQI e JSON. Os `.ino` das subpastas não são descobertos automaticamente pelo Arduino: o arquivo principal contém `#include` explícito para cada um, na ordem do sketch validado. Esses módulos ainda compartilham a mesma unidade C++ e **não são bibliotecas independentes**.
 
 **Mapa de responsabilidades e limitacoes:** [SOC_INO_TABS.md](SOC_INO_TABS.md).
 **G1 e parametros:** [GATE_01.md](GATE_01.md).
-**USB/BLE:** [BLE_USB.md](BLE_USB.md).
+**USB/BLE:** [BLE_USB.md](../bridge/BLE_USB.md).
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| `firmware/pitaco_2_4/pitaco_2_4.ino` | `setup`, `loop`, estado compartilhado e constantes |
-| `pitaco_commands.ino` | `ListenCommand`, comandos e/r/f/c/z |
-| `pitaco_ble_ota.ino` | `InitBleCommunication`, callbacks GATT/OTA e transmissao USB/BLE |
-| `pitaco_respiration.ino` | `PollPressureSampling`, ADC MPX5010DP, filtros, zero/calibracao |
-| `pitaco_ppg_sensor.ino` | `InitMAX30105`, `PollMAX30105`, FIFO64, erros e I2C |
-| `pitaco_ppg_contact_sqi.ino` | Contato optico e fechamento da janela G1 |
-| `gate_01_integrity.ino` | Estatisticas e razoes de falha G1 |
-| `pitaco_ppg_bpm.ino` | `checkForBeat`, RR e BPM experimental |
-| `pitaco_ppg_json.ino` | JSONL dos pares RED/IR e eventos G1 |
+| `frimeware2.4/frimeware2.4.ino` | `setup`, `loop`, estado compartilhado e constantes |
+| `frimeware2.4/communication/pitaco_commands.ino` | `ListenCommand`, comandos e/r/f/c/z |
+| `frimeware2.4/communication/pitaco_ble_ota.ino` | `InitBleCommunication`, callbacks GATT/OTA e transmissao USB/BLE |
+| `frimeware2.4/sensors/pitaco_respiration.ino` | `PollPressureSampling`, ADC MPX5010DP, filtros, zero/calibracao |
+| `frimeware2.4/sensors/pitaco_ppg_sensor.ino` | `InitMAX30105`, `PollMAX30105`, FIFO64, erros e I2C |
+| `frimeware2.4/processing/pitaco_ppg_contact_sqi.ino` | Contato optico e fechamento da janela G1 |
+| `frimeware2.4/sqi/gate_01_integrity.ino` | Estatisticas e razoes de falha G1 |
+| `frimeware2.4/processing/pitaco_ppg_bpm.ino` | `checkForBeat`, RR e BPM experimental |
+| `frimeware2.4/communication/pitaco_ppg_json.ino` | JSONL dos pares RED/IR e eventos G1 |
 
-O driver SparkFun **vendorizado** `firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/*.h/.cpp`
+O driver SparkFun **vendorizado** `frimeware2.4/src/vendor_sparkfun_max3010x/*.h/.cpp`
 nao foi alterado nem renomeado; continua necessario para FIFO64 e BPM.
-A interface Python reside em `pitaco_bridge/gui/`, e nao exige segunda
+A interface Python reside em `arduino-pitaco-mpx5010dp-ble/pitaco_bridge/gui/`, e nao exige segunda
 COM virtual para o oximetro. Codigo de pesquisa offline em
-`pitaco_bridge/ppg_validation_25hz.py` tambem permanece independente do
+`arduino-pitaco-mpx5010dp-ble/pitaco_bridge/ppg_validation_25hz.py` tambem permanece independente do
 sketch ESP32.
 
 ## Configuração vigente — não modificar sem novo ensaio
@@ -58,8 +54,8 @@ Depois de salvar cópias, remover apenas capturas locais conhecidas com:
 
 ## Verificações do baseline
 
-- Testes Python: python -m unittest discover -s tests -p test_*.py
-- Gate C++: g++ -std=c++11 -Wall -Wextra -Werror tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1
+- Testes Python: python -m unittest discover -s test -p test_*.py
+- Gate C++: g++ -std=c++11 -Wall -Wextra -Werror test/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1
 - ESP32-C3: arduino-cli compile --fqbn esp32:esp32:esp32c3 firmware/pitaco_2_4
 - Revisar CI do pull request e ensaiar USB/BLE em hardware, especialmente throughput BLE sob carga.
 

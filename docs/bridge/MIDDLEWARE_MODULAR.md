@@ -5,7 +5,7 @@ para três arquivos, sem modificar protocolo USB/BLE, lógica da Unity,
 Gate 01, detector de BPM ou cálculo experimental de SpO₂.
 
 ```text
-arduino-pitaco-mpx5010dp-unity/
+arduino-pitaco-mpx5010dp-ble/
 ├── ble_client_mpx5010dp.py     # Entrada original (não mudou)
 └── pitaco_bridge/
     ├── gui/
@@ -51,11 +51,11 @@ nos módulos que já existiam.
 
 ## Execução e validação
 
-Na pasta do sketch, como anteriormente:
+Na raiz do repositório (separada do sketch Arduino):
 
 ```powershell
-python .\ble_client_mpx5010dp.py
-python -m unittest discover -s tests -p "test_*.py" -v
+python .\arduino-pitaco-mpx5010dp-ble\ble_client_mpx5010dp.py
+python -m unittest discover -s test -p "test_*.py" -v
 ```
 
 Verificar no Windows as duas janelas simultâneas, aferições, abertura e
