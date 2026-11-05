@@ -25,7 +25,7 @@ ainda comprovacao experimental da origem exclusiva do overflow.
 ## Validacao USB com MAX30105 real — 02/11/2026 (confirmada)
 
 Apos o commit `4ea1951`, ensaio de bancada com ESP32-C3 e
-`python .\\pitaco24_ppg_probe.py COM3 --seconds 35`:
+`python .\\pitaco_experimental\\pitaco24_ppg_probe.py COM3 --seconds 35`:
 
 ```text
 X,PPG_PRESTART,ovf=0,wr=0,rd=0
@@ -68,7 +68,7 @@ os thresholds G1 sem observar distribuicao de RED/IR e evidencias.
 
 ## Validacao USB com protocolo de contato — 60 s (02/11/2026)
 
-Ensaio com `python .\\pitaco24_ppg_probe.py COM3 --seconds 60 --csv ppg_contato_60s.csv`.
+Ensaio com `python .\\pitaco_experimental\\pitaco24_ppg_probe.py COM3 --seconds 60 --csv ppg_contato_60s.csv`.
 O relatorio abaixo e baseado no log de status e G1 fornecido em conversa;
 o CSV com RED/IR/BPM ainda nao foi disponibilizado para analise.
 
@@ -209,7 +209,7 @@ COLLECTING -- overflow --> G1 GAP -> consumir amostras acessiveis
 8. Enviar `r` novamente. Deve retomar RED/IR e reiniciar a janela,
    sem necessitar religar a placa.
 9. Fechar Monitor Serial e executar:
-   `python .\\pitaco24_ppg_probe.py COM3 --seconds 35 --csv fifo_teste.csv`.
+   `python .\\pitaco_experimental\\pitaco24_ppg_probe.py COM3 --seconds 35 --csv fifo_teste.csv`.
    Nunca abrir COM3 no Arduino IDE e Python simultaneamente.
 10. Repetir com dedo estavel, sem dedo, fluxo respiratorio e conexao
     BLE ativa. Monitorar `X,PPG_FIFO_OVERFLOW`,
@@ -283,14 +283,14 @@ X,PPG_DRIVER,impl=vendor_safe_fifo,sw_slots=64,sw_usable=63
    atualizar a branch `fix/ppg-sparkfun-buffer64-safe-fifo`.
 2. Habilitar saida detalhada de compilacao no Arduino IDE, compilar e
    carregar o firmware novo no ESP32-C3. Confirmar que o sketch usa
-   `src/vendor_sparkfun_max3010x/MAX30105.cpp`. Nao misturar binario
+   `firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/MAX30105.cpp`. Nao misturar binario
    anterior com o codigo atualizado.
 3. Iniciar sessao `r`; buscar `X,PPG_DRIVER` e confirmar 64/63.
    Se a compilacao indicar referencia indefinida a
    `getSoftwareBufferCapacity`, procurar colisao/mistura de drivers;
    nao mascarar o erro retirando o diagnostico.
 4. Coletar 60 segundos por USB com:
-   `python .\\pitaco24_ppg_probe.py COM3 --seconds 60 --csv ppg_driver_diag_60s.csv`.
+   `python .\\pitaco_experimental\\pitaco24_ppg_probe.py COM3 --seconds 60 --csv ppg_driver_diag_60s.csv`.
    Observar `ovf`, `PPG_SW_RING_OVERRUN`, `novas/processadas`,
    G1 e saltos de sequencia.
 5. Repetir com BLE e graficos em uso, sem mudar o BPM para isolar

@@ -108,7 +108,7 @@ e zero perda na fila CSV; dados sem esse requisito não provam perda zero.
   Windows e GUI. Para distinguir problema FIFO de BLE,
   confrontar com telemetria USB X,PPG_DIAG e seus contadores.
 - Testes de regressão: python -m unittest discover -s tests -p test_*.py
-- Sintaxe: python -m py_compile ble_client_mpx5010dp.py pitaco24_monitor.py
+- Sintaxe: python -m py_compile ble_client_mpx5010dp.py pitaco_bridge/monitor.py
 - Validação física depende de teste do operador no Windows e ESP32-C3.
 
 ## Escolha de LEDs e BPM
@@ -128,19 +128,19 @@ própria; a SpO₂ ainda não é calculada no firmware. No PC há apenas uma est
 
 | Função | Arquivo | Entrada → operação → saída |
 | --- | --- | --- |
-| start_bridge | ble_client_mpx5010dp.py | Escolha da conexão/COM → abre porta e threads de monitoramento |
-| ble_bridge | ble_client_mpx5010dp.py | BLE → descobre PITACO, assina pressão legacy + PPG JSON e inicia coleta no modo monitor |
-| notification_handler | ble_client_mpx5010dp.py | Fragmentos da characteristic de pressão → reconstrói LF, encaminha pressão, echop e zero |
-| ppg_notification_handler | ble_client_mpx5010dp.py | Fragmentos do canal óptico → remonta JSONL, contabiliza notificação e JSON inválido |
-| usb_read_device_loop | ble_client_mpx5010dp.py | USB → lê LF/echop/zero/pressão/JSON e usa o mesmo parser |
+| start_bridge | pitaco_bridge/gui/main_window.py | Escolha da conexão/COM → abre porta e threads de monitoramento |
+| ble_bridge | pitaco_bridge/gui/main_window.py | BLE → descobre PITACO, assina pressão legacy + PPG JSON e inicia coleta no modo monitor |
+| notification_handler | pitaco_bridge/gui/main_window.py | Fragmentos da characteristic de pressão → reconstrói LF, encaminha pressão, echop e zero |
+| ppg_notification_handler | pitaco_bridge/gui/main_window.py | Fragmentos do canal óptico → remonta JSONL, contabiliza notificação e JSON inválido |
+| usb_read_device_loop | pitaco_bridge/gui/main_window.py | USB → lê LF/echop/zero/pressão/JSON e usa o mesmo parser |
 | parse_pitaco_line | pitaco24_protocol.py | Linha → valida pressão numérica ou JSON sample/G1 e descarta estrutura inválida |
 | BleJsonlBuffer.feed | pitaco24_protocol.py | Bytes BLE → acumula até LF e só entrega linha completa |
 | process_pitaco_line | gui/main_window.py | Mensagem válida → atualiza monitor PPG e pressão do jogo (BPM fica no monitor) |
-| update_pressure_from_device | ble_client_mpx5010dp.py | Pa → fluxo estimado, filtro e buffers do gráfico pneumográfico |
-| PressureFilter.process | ble_client_mpx5010dp.py | Fluxo estimado → filtro configurável do pneumo, sem alterar RED/IR |
-| interpolation_loop | ble_client_mpx5010dp.py | Fluxo/pressão → escreve série contínua na COM do jogo respiratório |
-| send_ble_command | ble_client_mpx5010dp.py | r/f/c/z → preserva envio pela characteristic original ou USB física |
-| stop_bridge | ble_client_mpx5010dp.py | Desconexão → fecha janelas, finaliza CSV e libera COM/USB/BLE |
+| update_pressure_from_device | pitaco_bridge/gui/main_window.py | Pa → fluxo estimado, filtro e buffers do gráfico pneumográfico |
+| PressureFilter.process | pitaco_bridge/gui/main_window.py | Fluxo estimado → filtro configurável do pneumo, sem alterar RED/IR |
+| interpolation_loop | pitaco_bridge/gui/main_window.py | Fluxo/pressão → escreve série contínua na COM do jogo respiratório |
+| send_ble_command | pitaco_bridge/gui/main_window.py | r/f/c/z → preserva envio pela characteristic original ou USB física |
+| stop_bridge | pitaco_bridge/gui/main_window.py | Desconexão → fecha janelas, finaliza CSV e libera COM/USB/BLE |
 
 ### Modelagem do teste (novo; não altera aquisição)
 

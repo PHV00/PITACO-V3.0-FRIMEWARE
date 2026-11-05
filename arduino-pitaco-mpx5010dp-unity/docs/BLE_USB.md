@@ -1,6 +1,6 @@
 # PITACO 2.4 — BLE, USB, OTA e ponte Unity
 
-**Fontes:** ../arduino-pitaco-mpx5010dp-unity.ino, ../ble_client_mpx5010dp.py e ../pitaco24_protocol.py.
+**Fontes:** `../firmware/pitaco_2_4/pitaco_2_4.ino`, `../ble_client_mpx5010dp.py`, `../pitaco_bridge/gui/main_window.py` e `../pitaco_bridge/protocol.py`.
 
 ## GATT: manter compatibilidade com o original
 

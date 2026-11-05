@@ -30,7 +30,7 @@ Ampliar o anel do ESP32 nao evita overflow se a CPU/USB/BLE ficar tempo demais
 sem esvaziar a FIFO. O codigo preserva `ovf`, `PPG_FIFO_OVERFLOW`,
 `PPG_SW_RING_OVERRUN`, `PPG_I2C_FIFO_READ_ERROR` e a causa G1=9.
 
-Compilacao: abrir `arduino-pitaco-mpx5010dp-unity.ino` na Arduino IDE com
+Compilacao: abrir `firmware/pitaco_2_4/pitaco_2_4.ino` na Arduino IDE com
 placa ESP32-C3 configurada. A pasta `src/` do sketch e compilada
 recursivamente pelo Arduino. Os includes especificos da pasta local evitam
 compilar uma segunda copia externa do driver. Nenhum UUID, payload JSONL,

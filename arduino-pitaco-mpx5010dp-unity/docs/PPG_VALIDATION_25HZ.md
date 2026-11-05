@@ -38,9 +38,9 @@ CSV bruto, type=sample + type=g1
        relatorio JSON auditavel
 ```
 
-**Fontes de implementacao:** `gate_01_integrity.ino`,
+**Fontes de implementacao:** `firmware/pitaco_2_4/gate_01_integrity.ino`,
 `pitaco_bridge/experimental.py`,
-`src/vendor_sparkfun_max3010x/heartRate.cpp`.
+`firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/heartRate.cpp`.
 A funcao `sparkfun_fir_gain()` reproduz a **resposta em frequencia do
 FIR de 23 taps** do arquivo SparkFun, NAO o detector completo
 (`averageDCEstimator` + zero crossing + limiares).

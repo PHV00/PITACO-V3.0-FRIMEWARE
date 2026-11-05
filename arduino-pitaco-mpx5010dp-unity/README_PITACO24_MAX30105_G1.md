@@ -1,5 +1,7 @@
 # PITACO 2.4 — MPX5010DP + MAX30105 + G1 + BPM experimental
 
+**Local atual do firmware 2.4:** `firmware/pitaco_2_4/pitaco_2_4.ino` (oito outras abas `.ino` na mesma pasta). **Interface Python:** `ble_client_mpx5010dp.py` na raiz do projeto. Algumas referências adiante registram etapas históricas e não representam o layout de compilação atual.
+
 **Documentação do baseline:** [Visão geral](docs/BASELINE.md) · [Gate 01 e suas funções](docs/GATE_01.md) · [BLE, USB e ponte Unity](docs/BLE_USB.md). Capturas CSV locais ficam fora do Git.
 
 
@@ -18,7 +20,7 @@ O ESP32-C3 continua lendo o MPX5010DP (~20 Hz) e o MAX30102
 (~25 pares RED/IR por segundo). A implementacao agora usa **separacao
 de responsabilidades**: orquestrador principal, comandos, respiracao,
 BLE/OTA, aquisicao PPG, contato/G1, BPM e serializacao JSON em abas
-`.ino`. O driver SparkFun local permanece em `src/vendor_sparkfun_max3010x/`
+`.ino`. O driver SparkFun local permanece em `firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/`
 com a correcao FIFO64, pois o Arduino compila o driver de terceiros como
 `.h/.cpp`; nao o renomeamos para `.ino`. A interface Python atual
 preserva a unica COM do jogo respiratorio e nao abre segunda COM do

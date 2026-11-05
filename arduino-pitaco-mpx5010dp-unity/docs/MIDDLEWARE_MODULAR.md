@@ -67,7 +67,7 @@ físico nem a GUI real.
 
 A seleção de porta virtual de oxímetro, seu estado, comandos `echox` e
 thread de escrita `FC,0` foram removidos de `main_window.py`.
-O MAX30102 está conectado diretamente ao ESP32 e envia RED, IR, BPM e SQI
+O MAX30105 está conectado diretamente ao ESP32 e envia RED, IR, BPM e SQI
 no JSON PPG recebido pelo USB ou BLE existentes. Não houve alteração no
 firmware, parser, qualidade do sinal ou cálculo de BPM/SpO₂. A porta virtual
 do **jogo respiratório** permanece para pressão/fluxo e comandos do PITACO;

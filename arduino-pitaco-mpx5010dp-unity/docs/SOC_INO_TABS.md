@@ -1,5 +1,7 @@
 # PITACO 2.4 — Separacao de responsabilidades (SoC) em abas `.ino`
 
+**Sketch atual:** `firmware/pitaco_2_4/` (referências de arquivos `.ino` nesta tabela são relativas a essa pasta).
+
 **Escopo:** refatoracao **organizacional**, sem modificar algoritmos, calibracao,
 G1, BPM, FIFO, comandos, JSON, UUIDs ou taxas. O `setup()` e o `loop()`
 continuam no sketch principal. Os modulos sao apenas abas do **mesmo** firmware;
@@ -9,7 +11,7 @@ nao ha Facade, Pipeline novo nem Dependency Injection.
 
 | Onde procurar | Arquivo | O que contem |
 | --- | --- | --- |
-| Entrada e coordenacao | `arduino-pitaco-mpx5010dp-unity.ino` | includes, parametros, estados compartilhados, prototipos, `setup()`, `loop()` |
+| Entrada e coordenacao | `pitaco_2_4.ino` | includes, parametros, estados compartilhados, prototipos, `setup()`, `loop()` |
 | Comandos da sessao | `pitaco_commands.ino` | `ListenCommand`: e/echop, r, f, c, z |
 | BLE/USB e atualizacao | `pitaco_ble_ota.ino` | callbacks, `InitBleCommunication`, `SendStatus`, `SendPpgJson`, OTA |
 | Pressao respiratoria | `pitaco_respiration.ino` | `PollPressureSampling`, leitura MPX, EMA/media movel, calibracao, zero |
@@ -73,7 +75,7 @@ ainda exigiriam desacoplar hardware futuramente.
 
 ### Por que nao converter a SparkFun para `.ino`?
 
-A pasta `src/vendor_sparkfun_max3010x/` contem o **driver de terceiros**
+A pasta `firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/` contem o **driver de terceiros**
 `MAX30105.h/.cpp` e `heartRate.h/.cpp`. Esses arquivos sao compilados
 como biblioteca C++ do sketch e possuem estruturas e definicoes que
 nao devem ser simplesmente renomeadas para `.ino`. A versao local inclui
@@ -97,7 +99,7 @@ o driver C++ local e mantido intacto.
 1. `g++ -std=c++11 -Wall -Wextra -Werror tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1`;
 2. `python3 -m unittest discover -s tests -p 'test_*.py'`, incluindo
    `test_ppg_lifecycle_contract.py` adaptado para abas;
-3. `arduino-cli compile --fqbn esp32:esp32:esp32c3 arduino-pitaco-mpx5010dp-unity`;
+3. `arduino-cli compile --fqbn esp32:esp32:esp32c3 firmware/pitaco_2_4`;
 4. Com a placa e sensor: comparar log antigo/novo, mensagens, seq, G1,
    BPM, FIFO64 e comandos e/r/f/c/z, zero de 10 s, OTA e BLE.
 

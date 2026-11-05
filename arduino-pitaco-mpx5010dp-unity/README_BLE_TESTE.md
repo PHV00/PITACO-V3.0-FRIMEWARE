@@ -1,5 +1,7 @@
 # PITACO 2.0 — teste BLE com MPX5010DP (experimental)
 
+**Nota sobre o layout atual:** sketch canônico em `firmware/pitaco_2_4/`; entrada Python na raiz `ble_client_mpx5010dp.py`; ferramentas em `pitaco_experimental/`.
+
 Este teste usa o mesmo firmware da pasta, preservando firmware e cliente GUI legados.
 A leitura enviada pelo ESP32 ja e **pressao relativa em Pa**, assinada e com zona morta.
 **Nao e fluxo calibrado (L/min)**. Valores negativos relativos ao offset nao

@@ -4,6 +4,8 @@ A pasta `frimeware2.5` conserva o nome exato solicitado. O arquivo
 principal do sketch e `frimeware2.5.ino`: a especificacao Arduino
 permite ponto no nome e exige que arquivo principal e pasta coincidam.
 
+Esta e uma **copia historica** (snapshot do codigo anterior a reorganizacao). A implementacao canonica atual vive em `arduino-pitaco-mpx5010dp-unity/firmware/pitaco_2_4/`, mantendo paridade de codigo por testes.
+
 Esta e uma **copia funcional** da versao SoC do firmware na branch
 `feature/ppg-sqi-bpm-25hz-validation` (commit `2274ba6`).
 Mantivemos o sketch antigo para nao afetar o middleware Python, os
@@ -30,7 +32,7 @@ Nao substitua esse driver por uma biblioteca global sem repetir os testes.
 | `pitaco_ble_ota.ino` | BLE, USB, notificacoes e OTA |
 | `pitaco_commands.ino` | Comandos e/r/f/c/z |
 | `pitaco_respiration.ino` | MPX5010DP, filtros e calibracao |
-| `pitaco_ppg_sensor.ino` | MAX30102, FIFO64, I2C |
+| `pitaco_ppg_sensor.ino` | MAX30105, FIFO64, I2C |
 | `pitaco_ppg_contact_sqi.ino` | Contato optico e ciclo G1 |
 | `gate_01_integrity.ino` | Estatisticas RED/IR e G1 |
 | `pitaco_ppg_bpm.ino` | Detector e calculo experimental BPM |

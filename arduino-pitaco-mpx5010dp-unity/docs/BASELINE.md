@@ -2,6 +2,8 @@
 
 ## Arquitetura vigente — SoC em abas `.ino`
 
+**Raiz canônica do sketch:** `firmware/pitaco_2_4/`. O arquivo de entrada e as oito abas `.ino` ficam juntos nessa pasta. A documentação abaixo usa caminhos relativos à pasta `arduino-pitaco-mpx5010dp-unity/`.
+
 O firmware autoral foi reorganizado por **Separation of Concerns**. A pasta do
 sketch agora contem um arquivo principal de orquestracao e abas de PPG,
 respiracao, BLE/OTA, comandos, BPM, contato/SQI e JSON. O Arduino concatena
@@ -14,7 +16,7 @@ elas **nao sao bibliotecas independentes**.
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| `arduino-pitaco-mpx5010dp-unity.ino` | `setup`, `loop`, estado compartilhado e constantes |
+| `firmware/pitaco_2_4/pitaco_2_4.ino` | `setup`, `loop`, estado compartilhado e constantes |
 | `pitaco_commands.ino` | `ListenCommand`, comandos e/r/f/c/z |
 | `pitaco_ble_ota.ino` | `InitBleCommunication`, callbacks GATT/OTA e transmissao USB/BLE |
 | `pitaco_respiration.ino` | `PollPressureSampling`, ADC MPX5010DP, filtros, zero/calibracao |
@@ -24,7 +26,7 @@ elas **nao sao bibliotecas independentes**.
 | `pitaco_ppg_bpm.ino` | `checkForBeat`, RR e BPM experimental |
 | `pitaco_ppg_json.ino` | JSONL dos pares RED/IR e eventos G1 |
 
-O driver SparkFun **vendorizado** `src/vendor_sparkfun_max3010x/*.h/.cpp`
+O driver SparkFun **vendorizado** `firmware/pitaco_2_4/src/vendor_sparkfun_max3010x/*.h/.cpp`
 nao foi alterado nem renomeado; continua necessario para FIFO64 e BPM.
 A interface Python reside em `pitaco_bridge/gui/`, e nao exige segunda
 COM virtual para o oximetro. Codigo de pesquisa offline em
@@ -58,7 +60,7 @@ Depois de salvar cópias, remover apenas capturas locais conhecidas com:
 
 - Testes Python: python -m unittest discover -s tests -p test_*.py
 - Gate C++: g++ -std=c++11 -Wall -Wextra -Werror tests/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1
-- ESP32-C3: arduino-cli compile --fqbn esp32:esp32:esp32c3 arduino-pitaco-mpx5010dp-unity
+- ESP32-C3: arduino-cli compile --fqbn esp32:esp32:esp32c3 firmware/pitaco_2_4
 - Revisar CI do pull request e ensaiar USB/BLE em hardware, especialmente throughput BLE sob carga.
 
 Esta refatoração muda a organização física das funções entre abas .ino. Os algoritmos, constantes e contratos permanecem previstos como invariantes; a equivalência operacional precisa ser confirmada em hardware após o CI.
