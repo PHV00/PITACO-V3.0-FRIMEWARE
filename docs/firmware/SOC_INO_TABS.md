@@ -94,7 +94,7 @@ o driver C++ local e mantido intacto.
 1. `g++ -std=c++11 -Wall -Wextra -Werror test/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1`;
 2. `python3 -m unittest discover -s test -p 'test_*.py'`, incluindo
    `test_ppg_lifecycle_contract.py` adaptado para abas;
-3. `arduino-cli compile --fqbn esp32:esp32:esp32c3 firmware/pitaco_2_4`;
+3. `arduino-cli compile --fqbn esp32:esp32:esp32c3 frimeware2.4`;
 4. Com a placa e sensor: comparar log antigo/novo, mensagens, seq, G1,
    BPM, FIFO64 e comandos e/r/f/c/z, zero de 10 s, OTA e BLE.
 

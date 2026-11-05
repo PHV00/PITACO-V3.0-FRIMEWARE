@@ -43,7 +43,7 @@ sketch ESP32.
 
 Arquivos .csv dos ensaios, ambientes .venv e caches Python são locais; um .gitignore impede que sejam adicionados por acidente, **mas não os apaga**. Antes de remover capturas, fazer cópia caso sejam dados de pesquisa.
 
-No PowerShell, dentro de arduino-pitaco-mpx5010dp-unity, revisar com:
+No PowerShell, na raiz do repositório PITACO_ESP32, revisar com:
 - git status --short
 - Get-ChildItem -Filter *.csv
 
@@ -56,7 +56,7 @@ Depois de salvar cópias, remover apenas capturas locais conhecidas com:
 
 - Testes Python: python -m unittest discover -s test -p test_*.py
 - Gate C++: g++ -std=c++11 -Wall -Wextra -Werror test/test_sqi_gate1.cpp -o /tmp/pitaco_g1 && /tmp/pitaco_g1
-- ESP32-C3: arduino-cli compile --fqbn esp32:esp32:esp32c3 firmware/pitaco_2_4
+- ESP32-C3: arduino-cli compile --fqbn esp32:esp32:esp32c3 frimeware2.4
 - Revisar CI do pull request e ensaiar USB/BLE em hardware, especialmente throughput BLE sob carga.
 
 Esta refatoração muda a organização física das funções entre abas .ino. Os algoritmos, constantes e contratos permanecem previstos como invariantes; a equivalência operacional precisa ser confirmada em hardware após o CI.

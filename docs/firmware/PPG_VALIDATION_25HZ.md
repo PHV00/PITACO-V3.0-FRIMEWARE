@@ -48,7 +48,7 @@ FIR de 23 taps** do arquivo SparkFun, NAO o detector completo
 ## Executar — PowerShell na raiz do repositorio
 
 ```powershell
-cd arduino-pitaco-mpx5010dp-unity
+cd PITACO_ESP32
 python .\arduino-pitaco-mpx5010dp-ble\pitaco_experimental\analyze_ppg_25hz.py .\ppg_fifo64_60s.csv --output .\ppg_25hz_report.json
 python -m unittest discover -s test -p "test_*.py"
 ```
