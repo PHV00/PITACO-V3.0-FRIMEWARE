@@ -79,3 +79,10 @@ A CI cobre host e compilação Arduino; a verificação física no ESP32-C3 cont
 ## Desenvolvimento e preservação de versões
 
 Não alterar parâmetros de G1, correntes de LED, taxa de aquisição, médias móveis ou algoritmos de oximetria como efeito colateral de refatorações de pastas. Os PRs experimentais BLE compacto e Unity Combo devem ser adaptados ao layout atual em branches específicas.
+
+
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+
+python .\arduino-pitaco-mpx5010dp-ble\ble_client_mpx5010dp.py
