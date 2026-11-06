@@ -166,13 +166,19 @@ void setup() {
 
 // Orquestra comandos, aquisicao PPG e a leitura de pressao do PITACO.
 void loop() {
-  // Escuta comandos via USB Serial
+  // Identificacao USB exclusiva do PITACO 2.4 (receptor C do Unity).
+  // O comando 'i' nao altera a sessao respiratoria/PPG nem usa BLE.
+  // Contrato legado e/E -> echop permanece rigorosamente inalterado.
   if (Serial.available()) {
     char c = Serial.read();
-    if (c == 'e' || c == 'E') {
-      Serial.print("echop\n");
+    if (c == 'i') {
+      Serial.print("echo2.4p\n");
+    } else {
+      if (c == 'e' || c == 'E') {
+        Serial.print("echop\n");
+      }
+      ListenCommand(c);
     }
-    ListenCommand(c);
   }
 
 #if DEBUG
