@@ -25,4 +25,11 @@ void ListenCommand(char cmd) {
   } else if (cmd == 'z' || cmd == 'Z') {
     StartTenSecondZero();
   }
+  else if (cmd == 'i' || cmd == 'I') {
+    pCharacteristic->setValue("echo2.4p\n");
+
+    if (deviceConnected) {
+        pCharacteristic->notify();
+    }
+  }
 }

@@ -169,9 +169,16 @@ void loop() {
   // Escuta comandos via USB Serial
   if (Serial.available()) {
     char c = Serial.read();
-    if (c == 'e' || c == 'E') {
-      Serial.print("echop\n");
+
+    // se 'i' utiliza pitaco 2.4 se não utiliza pitaco 2.0
+    if(c == 'i' || c == 'I'){
+      Serial.print("echo2.4p\n");
+    }else{
+      if (c == 'e' || c == 'E') {
+        Serial.print("echop\n");
+      }
     }
+
     ListenCommand(c);
   }
 
