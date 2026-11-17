@@ -1364,14 +1364,8 @@ def stop_bridge():
     ppg_graph_btn.configure(state="disabled")
 
     log("Desconectando...")
-    if ppg_monitor.csv.active:
-        try:
-            ppg_monitor.csv.stop()
-            ppg_csv_btn.configure(text="Gravar CSV PPG")
-            log(f"CSV PPG salvo: {ppg_monitor.csv.written} linhas; "
-                f"descartadas {ppg_monitor.csv.dropped}.")
-        except Exception as exc:
-            log(f"Falha ao encerrar CSV PPG: {exc}")
+    # Para tambem o log completo temporizado e cancela seu timer no Tk.
+    oxy_and_cardio_view.stop_ppg_csv("desconexao")
     # Encerra aquisicao no modo Cabo USB, inclusive monitor sem Unity.
     if ser_device and ser_device.is_open:
         try:
