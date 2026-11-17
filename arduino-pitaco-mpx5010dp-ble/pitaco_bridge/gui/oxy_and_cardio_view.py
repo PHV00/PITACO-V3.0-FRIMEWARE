@@ -5,6 +5,7 @@ no monitor.py / experimental.py. Sem conexao BLE propria.
 """
 import datetime
 import math
+import time
 from types import SimpleNamespace
 from tkinter import filedialog
 
@@ -24,7 +25,7 @@ def create_oxy_and_cardio_view(app):
     # Painel optico em janela separada; o pneumografo permanece original.
     ppg_window = ctk.CTkToplevel(root)
     ppg_window.title("PITACO 2.4 - Monitor cardíaco e oximetria")
-    ppg_window.geometry("980x860")
+    ppg_window.geometry("980x900")
     ppg_window.protocol("WM_DELETE_WINDOW", close_ppg_graph)
     ppg_window.withdraw()
 
@@ -151,37 +152,141 @@ def create_oxy_and_cardio_view(app):
     ppg_stats_label.pack(fill="x", padx=10, pady=(1, 4))
 
 
-    def toggle_ppg_csv():
-        """CSV optico inclui amostras recusadas pelo G1 e contato ausente."""
-        if ppg_monitor.csv.active:
-            try:
-                ppg_monitor.csv.stop()
-                ppg_csv_btn.configure(text="Gravar CSV PPG")
-                snap = ppg_monitor.snapshot()
-                log(f"CSV PPG finalizado: {snap['csv_written']} linhas; "
-                    f"descartadas pelo gravador: {snap['csv_dropped']}.")
-            except Exception as exc:
-                log(f"Falha ao finalizar CSV PPG: {exc}")
+    # A gravacao continua existente permanece manual; o modo completo usa
+    # o mesmo gravador em disco (sem limite do buffer visual de 34 s).
+    csv_mode = None  # None | "manual" | "timed"
+    timed_deadline = None
+    timed_after_id = None
+    log_duration_var = ctk.StringVar(value="2 min")
+    log_durations = {"1 min": 60, "2 min": 120, "3 min": 180, "5 min": 300}
+
+    def sync_csv_controls():
+        ppg_csv_btn.configure(
+            text="Encerrar CSV PPG" if csv_mode == "manual" else "Gravar CSV PPG",
+            state="disabled" if csv_mode == "timed" else "normal")
+        ppg_long_csv_btn.configure(
+            text="Encerrar log completo" if csv_mode == "timed" else "Gerar log completo",
+            state="disabled" if csv_mode == "manual" else "normal")
+        log_duration_menu.configure(
+            state="disabled" if csv_mode is not None else "normal")
+
+    def stop_ppg_csv(reason="manual"):
+        """Finaliza arquivo e cancela temporizador, inclusive na desconexao."""
+        nonlocal csv_mode, timed_deadline, timed_after_id
+        if timed_after_id is not None:
+            root.after_cancel(timed_after_id)
+            timed_after_id = None
+        old_mode = csv_mode
+        timed_deadline = None
+        try:
+            if ppg_monitor.csv.active or old_mode is not None:
+                ppg_monitor.csv.stop()  # drena a fila antes de fechar o CSV
+        except Exception as exc:
+            log(f"Falha ao finalizar CSV PPG: {exc}")
+            csv_status_label.configure(text="Falha ao finalizar CSV: verifique o log")
             return
-        initial = "pitaco24_ppg_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"
+        csv_mode = None
+        sync_csv_controls()
+        if old_mode is not None:
+            snap = ppg_monitor.snapshot()
+            error = snap["csv_error"]
+            csv_status_label.configure(
+                text=f"Finalizado ({reason}): {snap['csv_written']} linhas; "
+                     f"perdas do gravador: {snap['csv_dropped']}"
+                     + (f" | ERRO: {error}" if error else ""))
+            log(f"CSV PPG finalizado ({reason}): {ppg_monitor.csv.path}; "
+                f"{snap['csv_written']} linhas; {snap['csv_dropped']} descartadas."
+                + (f" ERRO: {error}" if error else ""))
+
+    def update_timed_capture():
+        """Agendamento no Tk; nunca depende do refresh dos graficos."""
+        nonlocal timed_after_id
+        timed_after_id = None
+        if csv_mode != "timed":
+            return
+        if not ppg_monitor.csv.active:
+            stop_ppg_csv("gravador interrompido")
+            return
+        remaining = max(0, math.ceil(timed_deadline - time.monotonic()))
+        if remaining == 0:
+            stop_ppg_csv("duracao atingida")
+            return
+        csv_status_label.configure(
+            text=f"LOG COMPLETO em andamento | faltam {remaining}s | "
+                 f"{ppg_monitor.csv.written} linhas | "
+                 f"descartadas {ppg_monitor.csv.dropped}")
+        timed_after_id = root.after(250, update_timed_capture)
+
+    def start_ppg_csv(mode):
+        nonlocal csv_mode, timed_deadline
+        if csv_mode is not None or ppg_monitor.csv.active:
+            log("Ja existe uma gravacao CSV PPG em andamento.")
+            return
+        snap = ppg_monitor.snapshot()
+        if not app.running or snap["sample_age_s"] is None or snap["sample_age_s"] > 2.0:
+            log("Inicie a conexao e aguarde amostras PPG recentes antes de gravar.")
+            csv_status_label.configure(text="Aguardando conexao e amostras PPG")
+            return
+        prefix = "pitaco24_ppg_full_" if mode == "timed" else "pitaco24_ppg_"
+        initial = prefix + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"
         target = filedialog.asksaveasfilename(
-            parent=ppg_window, title="Gravar dados brutos PPG/G1/pressao",
+            parent=ppg_window, title="Gravar RAW RED/IR, G1 e pressao (USB/BLE)",
             initialfile=initial, defaultextension=".csv",
             filetypes=[("Dados CSV", "*.csv")])
         if not target:
             return
         try:
             ppg_monitor.csv.start(target)
-            ppg_csv_btn.configure(text="Encerrar CSV PPG")
-            log("Gravacao CSV PPG iniciada: " + target)
         except Exception as exc:
             log(f"Falha ao abrir gravacao CSV: {exc}")
+            csv_status_label.configure(text=f"Erro ao abrir arquivo: {exc}")
+            return
+        csv_mode = mode
+        log("Gravacao CSV PPG iniciada: " + target)
+        if mode == "timed":
+            duration = log_durations[log_duration_var.get()]
+            timed_deadline = time.monotonic() + duration
+            log(f"Log completo: coleta continua por {duration}s, "
+                "incluindo G1 reprovado e contato ausente.")
+            update_timed_capture()
+        else:
+            csv_status_label.configure(
+                text="CSV manual em andamento | clique em Encerrar CSV PPG")
+        sync_csv_controls()
 
+    def toggle_ppg_csv():
+        """Gravacao manual existente: nao trunca em 1 segundo."""
+        if csv_mode == "manual":
+            stop_ppg_csv("manual")
+        elif csv_mode is None:
+            start_ppg_csv("manual")
 
+    def toggle_ppg_long_csv():
+        """Gravacao automatica por 60/120/180/300 segundos."""
+        if csv_mode == "timed":
+            stop_ppg_csv("interrompido pelo usuario")
+        elif csv_mode is None:
+            start_ppg_csv("timed")
+
+    csv_controls = ctk.CTkFrame(ppg_info_frame, fg_color="transparent")
+    csv_controls.pack(anchor="e", padx=12, pady=(2, 2))
     ppg_csv_btn = ctk.CTkButton(
-        ppg_info_frame, text="Gravar CSV PPG", width=135, height=26,
+        csv_controls, text="Gravar CSV PPG", width=135, height=26,
         command=toggle_ppg_csv)
-    ppg_csv_btn.pack(anchor="e", padx=12, pady=(2, 8))
+    ppg_csv_btn.pack(side="left", padx=(0, 8))
+    log_duration_menu = ctk.CTkOptionMenu(
+        csv_controls, variable=log_duration_var,
+        values=list(log_durations.keys()), width=90, height=26)
+    log_duration_menu.pack(side="left", padx=(0, 8))
+    ppg_long_csv_btn = ctk.CTkButton(
+        csv_controls, text="Gerar log completo", width=165, height=26,
+        command=toggle_ppg_long_csv)
+    ppg_long_csv_btn.pack(side="left")
+    csv_status_label = ctk.CTkLabel(
+        ppg_info_frame,
+        text="CSV inativo | Log completo recomendado: 2 min, sem mover o dedo",
+        font=("Segoe UI", 10), text_color="#9ca3af", anchor="e")
+    csv_status_label.pack(fill="x", padx=14, pady=(0, 6))
 
     ppg_fig = Figure(figsize=(8, 6.3), dpi=100)
     ppg_grid = ppg_fig.add_gridspec(3, 1, height_ratios=(1.7, 0.95, 0.85))
@@ -392,6 +497,8 @@ def create_oxy_and_cardio_view(app):
         window=ppg_window,
         csv_button=ppg_csv_btn,
         toggle_ppg_csv=toggle_ppg_csv,
+        stop_ppg_csv=stop_ppg_csv,
+        toggle_ppg_long_csv=toggle_ppg_long_csv,
         update_ppg_plot=update_ppg_plot,
         animation=ani_ppg,
     )
