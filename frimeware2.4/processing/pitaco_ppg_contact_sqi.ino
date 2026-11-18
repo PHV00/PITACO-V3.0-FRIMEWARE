@@ -2,6 +2,14 @@
 // As estatisticas/thresholds do G1 permanecem em gate_01_integrity.ino.
 
 // Reinicia o detector optico de contato, separado do Gate 01.
+// An epoch identifies contact/session discontinuities independently of the
+// per-sample sqi.reason (which may reflect a temporary G1 waiting state).
+void BumpPpgQualityEpoch(const char* reason) {
+  ++ppgQualityEpoch; // modulo 2^16, sufficient for ordered device sessions
+  Serial.printf("X,PPG_G1_EPOCH,epoch=%u,reason=%s\n",
+                (unsigned)ppgQualityEpoch, reason);
+}
+
 void ResetPpgContact() {
   ppgContactPresent = false;
   ppgContactGoodSamples = 0;
@@ -22,6 +30,7 @@ bool UpdatePpgContact(uint32_t red, uint32_t ir, unsigned long receiveMs) {
           ppgContactGoodSamples >= PPG_CONTACT_CONFIRM_SAMPLES) {
         ppgContactPresent = true;
         // Exigir janela NOVA apos retomar contato: nao herdar PASS antigo.
+        BumpPpgQualityEpoch("CONTACT_PRESENT");
         g1Reset();
         ppgWindowStartMs = receiveMs;
         g1Ready = false;
@@ -39,6 +48,7 @@ bool UpdatePpgContact(uint32_t red, uint32_t ir, unsigned long receiveMs) {
           ppgContactBadSamples >= PPG_CONTACT_CONFIRM_SAMPLES) {
         ppgContactPresent = false;
         // Descartar janela mista; manter RAW disponivel para diagnostico.
+        BumpPpgQualityEpoch("CONTACT_ABSENT");
         g1Reset();
         ppgWindowStartMs = receiveMs;
         g1Ready = false;
