@@ -40,6 +40,7 @@ void PollMAX30105() {
       max30105.shutDown();
       ppgSampling = false;
       ResetPpgContact();
+      BumpPpgQualityEpoch("STOPPED");
       g1Reset();
       g1Ready = false;
       g1Passed = false;
@@ -85,6 +86,7 @@ void PollMAX30105() {
       return;
     }
     ResetPpgContact();
+    BumpPpgQualityEpoch("COLLECTING");
     g1Reset();
     ppgSampling = true;
     ppgWindowStartMs = now;
@@ -167,8 +169,13 @@ void PollMAX30105() {
     );
 
     // A perda invalida a janela atual e qualquer BPM anterior.
+    // Start a new quality epoch: no previous G1 PASS can be inherited.
+    BumpPpgQualityEpoch("FIFO_RECOVERY");
+    g1Reset();
+    ppgWindowStartMs = millis();
     g1Ready = false;
     g1Passed = false;
+    g1Reason = 1;
     heartBpm = 0.0f;
     lastBeatMs = 0;
 
