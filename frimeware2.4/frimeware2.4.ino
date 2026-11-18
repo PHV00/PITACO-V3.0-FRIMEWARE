@@ -84,6 +84,9 @@ bool g1Passed = false;
 uint8_t g1Reason = 1;
 uint16_t ppgSeq = 0;
 uint16_t g1Window = 0;
+// Changes only when the current G1 quality session is invalidated.
+// Sent with every optical sample/G1 verdict for robust Unity synchronization.
+uint16_t ppgQualityEpoch = 0;
 unsigned long ppgWindowStartMs = 0;
 unsigned long ppgLastPollMs = 0;
 unsigned long ppgLastDiagMs = 0;
@@ -128,6 +131,7 @@ void SendStatus(const char* line);
 void StartTenSecondZero();
 void PollTenSecondZero();
 void ResetPpgContact();
+void BumpPpgQualityEpoch(const char* reason);
 void InitMAX30105();
 void PollMAX30105();
 void SendPpgJson(const char* jsonLine);
