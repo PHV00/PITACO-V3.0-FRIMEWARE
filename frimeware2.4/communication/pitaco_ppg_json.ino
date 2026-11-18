@@ -5,9 +5,9 @@
 void SendG1Json(uint8_t reason, uint16_t samples) {
   char line[160];
   snprintf(line, sizeof(line),
-           "{\"type\":\"g1\",\"t_ms\":%lu,\"window\":%u,\"sqi\":{\"g1\":%s,\"reason\":%u,\"samples\":%u}}\n",
+           "{\"type\":\"g1\",\"t_ms\":%lu,\"window\":%u,\"sqi\":{\"g1\":%s,\"reason\":%u,\"samples\":%u,\"epoch\":%u}}\n",
            millis(), (unsigned)g1Window, reason == 0 ? "true" : "false",
-           (unsigned)reason, (unsigned)samples);
+           (unsigned)reason, (unsigned)samples, (unsigned)ppgQualityEpoch);
   SendPpgJson(line);
 }
 
@@ -30,16 +30,16 @@ void PublishPpgSample(uint32_t red, uint32_t ir,
     // JSON por linha: mesmo esquema USB / BLE, sem dependencias de ArduinoJson.
     // Pressao amostrada a 20Hz; RED/IR, cerca de 25Hz efetivos.
     // G1 usa o ultimo resultado de uma janela de 5 segundos.
-    char line[240];
+    char line[280];
     const int written = snprintf(line, sizeof(line),
         "{\"type\":\"sample\",\"seq\":%u,\"t_ms\":%lu,"
         "\"ppg\":{\"red\":%lu,\"ir\":%lu,\"bpm\":%s,\"bpm_valid\":%s},"
         "\"mpx5010dp\":{\"pressure_pa\":%.2f,\"valid\":%s},"
-        "\"sqi\":{\"g1\":%s,\"reason\":%u,\"contact\":%s}}\n",
+        "\"sqi\":{\"g1\":%s,\"reason\":%u,\"contact\":%s,\"epoch\":%u}}\n",
         (unsigned)ppgSeq, receiveMs, (unsigned long)red,
         (unsigned long)ir, bpm, bpmValid ? "true" : "false",
         latestPressurePa, pressureValid ? "true" : "false",
         effectiveG1, (unsigned)effectiveReason,
-        instantContact ? "true" : "false");
+        instantContact ? "true" : "false", (unsigned)ppgQualityEpoch);
     if (written > 0 && written < (int)sizeof(line)) SendPpgJson(line);
 }
