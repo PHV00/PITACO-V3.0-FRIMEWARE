@@ -23,7 +23,7 @@ bool g1Evaluate(uint8_t* reason, uint16_t* samples);
 // diferencial negativa calibrada pelo fabricante do MPX5010DP.
 #define DEBUG false
 #define DEBUG_BT true
-#define PORT_SENSOR 0
+#define PORT_SENSOR 34
 #define R1 2170.0f
 #define R2 1500.0f
 #define IS_WROOM_DA false
@@ -52,8 +52,8 @@ const float ZERO_REFERENCE_PA = 100.0f; // Referencia provisoria para testar a U
 #define PPG_NOTIFY_UUID "3bcdff2a-47fc-4a87-9684-7672c49d9266"
 
 // MAX30105: I2C ESP32-C3 PROVISORIO, conferir pinos fisicos.
-#define MAX30105_SDA 4
-#define MAX30105_SCL 5
+#define MAX30105_SDA 21
+#define MAX30105_SCL 22
 #define PPG_WINDOW_MS 5000UL
 #define PPG_POLL_GAP_MS 180UL
 #define PPG_CONTACT_MIN 5000UL  // provisorio, depende de ensaio
