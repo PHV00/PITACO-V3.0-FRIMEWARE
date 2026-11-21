@@ -3,8 +3,41 @@
 
 // Configura MAX30105, LEDs, FIFO e estado inicial STOPPED.
 void InitMAX30105() {
-  Wire.begin(MAX30105_SDA, MAX30105_SCL);
-  if (!max30105.begin(Wire, I2C_SPEED_STANDARD)) {
+  // Diagnostico temporario para o ESP32-C3 + MAX30102 (endereco 0x57).
+  // Nao altera G1, FIFO, BPM, pressao ou protocolo BLE.
+  Serial.printf("X,I2C_PINS,sda=%d,scl=%d\n", MAX30105_SDA, MAX30105_SCL);
+  const bool i2cStarted = Wire.begin(MAX30105_SDA, MAX30105_SCL);
+  Wire.setClock(I2C_SPEED_STANDARD);
+  Serial.printf("X,I2C_BEGIN,%u\n", i2cStarted ? 1U : 0U);
+
+  delay(200); // Tempo para estabilizacao da alimentacao do sensor.
+
+  Wire.beginTransmission(0x57);
+  const uint8_t ack = Wire.endTransmission();
+  Serial.printf("X,I2C_ACK,%u\n", (unsigned)ack);
+
+  if (ack == 0) {
+    Wire.beginTransmission(0x57);
+    Wire.write(0xFF); // PART ID
+    const uint8_t registerStatus = Wire.endTransmission(false);
+    Serial.printf("X,I2C_PART_REG_SELECT,%u\n", (unsigned)registerStatus);
+
+    if (registerStatus == 0 &&
+        Wire.requestFrom((uint8_t)0x57, (uint8_t)1) == 1) {
+      const uint8_t partId = Wire.read();
+      Serial.printf("X,PART_ID,0x%02X\n", (unsigned)partId);
+    } else {
+      Serial.println("X,PART_ID_READ_FAILED");
+    }
+  }
+
+  const bool driverOk = max30105.begin(Wire, I2C_SPEED_STANDARD);
+  Serial.printf("X,DRIVER_BEGIN,%u\n", driverOk ? 1U : 0U);
+  if (!driverOk) {
+    // Testa se a segunda chamada interna a Wire.begin mudou o barramento.
+    Wire.beginTransmission(0x57);
+    const uint8_t ackAfterDriver = Wire.endTransmission();
+    Serial.printf("X,I2C_ACK_POST_DRIVER,%u\n", (unsigned)ackAfterDriver);
     Serial.println("X,MAX30105_NOT_FOUND");
     return;
   }
