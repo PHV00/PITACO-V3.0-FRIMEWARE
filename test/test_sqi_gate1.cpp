@@ -15,6 +15,29 @@ int main() {
   for (unsigned i=0; i<125; ++i)
     g1Add(106000u+(i%7u)*250u, 118000u+(i%9u)*350u);
   expect(0);
+  // Exact RED=350 boundary must pass, whereas RED=349 must reject.
+  g1Reset();
+  for (unsigned i=0; i<125; ++i)
+    g1Add(106000u+(i%2u)*349u, 118000u+(i%2u)*500u);
+  expect(4);
+  g1Reset();
+  for (unsigned i=0; i<125; ++i)
+    g1Add(106000u+(i%2u)*350u, 118000u+(i%2u)*500u);
+  expect(0);
+  // RED=499 is intentionally allowed by the experimental limit.
+  g1Reset();
+  for (unsigned i=0; i<125; ++i)
+    g1Add(106000u+(i%2u)*499u, 118000u+(i%2u)*500u);
+  expect(0);
+  // IR retains the strict baseline of 500 (499 must reject).
+  g1Reset();
+  for (unsigned i=0; i<125; ++i)
+    g1Add(106000u+(i%2u)*500u, 118000u+(i%2u)*499u);
+  expect(5);
+  g1Reset();
+  for (unsigned i=0; i<125; ++i)
+    g1Add(106000u+(i%2u)*500u, 118000u+(i%2u)*500u);
+  expect(0);
   g1Reset();
   for (unsigned i=0; i<125; ++i) g1Add(600u+i%20u,550u+i%15u);
   expect(2);
@@ -35,6 +58,6 @@ int main() {
   expect(9);
   g1Reset();
   expect(1);
-  puts("PASS: 7 G1 host scenarios");
+  puts("PASS: 12 G1 host scenarios");
   return 0;
 }

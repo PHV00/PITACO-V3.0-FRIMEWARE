@@ -5,7 +5,9 @@
 // PASS nao garante PPG fisiologicamente valido, BPM ou SpO2 clinicamente validos.
 static const uint32_t G1_ADC_MAX = 262143UL;
 static const uint32_t G1_MIN_MEAN = 5000UL;
-static const uint32_t G1_MIN_RANGE = 500UL;
+// Experimento RED_FLAT: reduzir apenas o limiar RED; preservar IR no baseline.
+static const uint32_t G1_MIN_RED_RANGE = 350UL;
+static const uint32_t G1_MIN_IR_RANGE = 500UL;
 static const uint32_t G1_CLIP_START = G1_ADC_MAX - 2048UL;
 static const uint16_t G1_MIN_SAMPLES = 50;
 
@@ -50,8 +52,8 @@ bool g1Evaluate(uint8_t* reason, uint16_t* samples) {
   else if (g1Samples < G1_MIN_SAMPLES) *reason = 8;
   else if (redMean < G1_MIN_MEAN) *reason = 2;
   else if (irMean < G1_MIN_MEAN) *reason = 3;
-  else if (g1RedMax - g1RedMin < G1_MIN_RANGE) *reason = 4;
-  else if (g1IrMax - g1IrMin < G1_MIN_RANGE) *reason = 5;
+  else if (g1RedMax - g1RedMin < G1_MIN_RED_RANGE) *reason = 4;
+  else if (g1IrMax - g1IrMin < G1_MIN_IR_RANGE) *reason = 5;
   else if (g1RedClips > 0) *reason = 6;
   else if (g1IrClips > 0) *reason = 7;
   else *reason = 0;

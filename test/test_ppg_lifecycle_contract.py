@@ -142,7 +142,12 @@ class SocFirmwareContract(unittest.TestCase):
         self.assertIn("const uint8_t effectiveReason", JSON)
         self.assertIn("SendPpgJson(line);", JSON)
         self.assertIn("g1Add(uint32_t red, uint32_t ir)", G1)
-        self.assertIn("G1_MIN_RANGE = 500UL", G1)
+        # Thresholds per-channel: experimental RED, baseline IR.
+        # Assert both declarations AND their actual use, not a legacy literal.
+        self.assertIn("G1_MIN_RED_RANGE = 350UL", G1)
+        self.assertIn("G1_MIN_IR_RANGE = 500UL", G1)
+        self.assertIn("g1RedMax - g1RedMin < G1_MIN_RED_RANGE", G1)
+        self.assertIn("g1IrMax - g1IrMin < G1_MIN_IR_RANGE", G1)
 
     def test_ble_ota_and_pressure_legacy_preserved(self):
         for token in ("class MyServerCallbacks", "class MyCallbacks",
