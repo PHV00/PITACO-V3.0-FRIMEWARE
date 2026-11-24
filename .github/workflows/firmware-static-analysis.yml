@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      BUILD_DIR: ${{ runner.temp }}/pitaco-static-esp32c3
+      BUILD_DIR: ${{ github.workspace }}/.pitaco-static-esp32c3
     steps:
       - name: Checkout
         uses: actions/checkout@v4
