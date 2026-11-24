@@ -37,7 +37,7 @@ jobs:
           set -euo pipefail
           arduino-cli config init
           arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-          arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.3.9 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli lib install "SparkFun MAX3010x Pulse and Proximity Sensor Library"
           sudo apt-get update
           sudo apt-get install -y cppcheck clang-tidy
@@ -124,6 +124,7 @@ jobs:
           mkdir -p reports
           python3 - <<'PY'
           from pathlib import Path
+          import os
           import xml.etree.ElementTree as ET
 
           report = Path("reports/cppcheck.xml")

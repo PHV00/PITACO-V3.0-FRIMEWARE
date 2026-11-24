@@ -10,7 +10,7 @@ Executar **Cppcheck** e **Clang-Tidy** por GitHub Actions, mantendo os testes at
 
 O firmware canônico usa `frimeware2.4/frimeware2.4.ino` com outros módulos autorais `.ino` incluídos explicitamente em subdiretórios. Analisá-los separadamente como se cada um fosse unidade independente pode causar erros espúrios e omitir contexto. Por isso, esta primeira etapa:
 
-1. configura Arduino CLI e a mesma plataforma **ESP32-C3** da compilação de referência;
+1. configura Arduino CLI e a mesma plataforma **ESP32-C3** da compilação de referência, fixando **arduino-esp32 3.3.9**; o core 4.0.0 alterou a interface BLE e não aceita diretamente o código existente;
 2. compila o sketch real em um diretório de build separado;
 3. gera `compile_commands.json` com `arduino-cli compile --only-compilation-database`;
 4. exige que a entrada **frimeware2.4.ino.cpp** exista no banco e no disco, contendo funções-chave do firmware;
