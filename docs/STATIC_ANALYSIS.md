@@ -1,46 +1,71 @@
-# Análise estática do firmware PITACO
+# Análise estática e Quality Gate do firmware PITACO
 
-**Status: configuração inicial em PR, ainda sem validação do primeiro run.** Esta documentação não constitui relatório de resultados nem prova de ausência de problemas.
+**Estado:** implementação proposta em PR, sem alterar código de produção, limiares G1 ou APIs do dispositivo.
 
-## Objetivo
+## Execução unificada
 
-Executar **Cppcheck** e **Clang-Tidy** por GitHub Actions, mantendo os testes atuais do G1, Python/bridge e compilação Arduino CI **inalterados**. A análise adicional ocorre no workflow `.github/workflows/firmware-static-analysis.yml`, não substitui a Action existente `pitaco24-g1.yml` nem modifica código de produção.
+O workflow principal é \`.github/workflows/pitaco24-g1.yml\`, acionado em PRs de firmware e em push na main. Uma única execução GitHub Actions apresenta:
 
-## Por que gerar C++ a partir do sketch
+1. **host:** testes G1 compilados com g++, testes Python USB/BLE/PPG/bridge e verificações de scripts.
+2. **esp32c3:** compilação real Arduino CLI para o ESP32-C3 canônico e sketch ESP32 legado, com Espressif Arduino core 3.3.9.
+3. **static-analysis:** workflow reutilizável \`.github/workflows/firmware-static-analysis.yml\`, chamado apenas pelo pipeline principal; gera base de compilação do sketch e executa Cppcheck + Clang-Tidy G1.
+4. **quality-gate:** resultado final obrigatório que somente passa quando os três jobs anteriores terminam com sucesso.
 
-O firmware canônico usa `frimeware2.4/frimeware2.4.ino` com outros módulos autorais `.ino` incluídos explicitamente em subdiretórios. Analisá-los separadamente como se cada um fosse unidade independente pode causar erros espúrios e omitir contexto. Por isso, esta primeira etapa:
+Não executamos dois pipelines de compilação/testes independentes para o mesmo PR. A etapa estática precisa compilar seu próprio sketch para obter o \`compile_commands.json\` no runner isolado.
 
-1. configura Arduino CLI e a mesma plataforma **ESP32-C3** da compilação de referência, fixando **arduino-esp32 3.3.9**; o core 4.0.0 alterou a interface BLE e não aceita diretamente o código existente;
-2. compila o sketch real em um diretório de build separado;
-3. gera `compile_commands.json` com `arduino-cli compile --only-compilation-database`;
-4. exige que a entrada **frimeware2.4.ino.cpp** exista no banco e no disco, contendo funções-chave do firmware;
-5. executa Cppcheck no sketch gerado, usando o banco de compilação;
-6. executa Clang-Tidy no mesmo sketch em modo **exploratório**, utilizando a mesma base de argumentos;
-7. publica arquivos XML, texto, versões das ferramentas e manifesto de cobertura como artefato GitHub.
+## Atribuição correta dos alertas
 
-**Limite:** a preparação do build e a análise do sketch não garantem auditoria individual de todo o driver SparkFun vendorizado. O objetivo primário é código **autoral** do firmware e sua árvore de inclusões. Em caso de inconsistência de cobertura, corrigir o comando antes de declarar a análise aprovada.
+**Relatório inspecionado (run 45402264452, 24/11/2026):**
 
-## Políticas de CI
+- Cppcheck reportou **77** achados.
+- **75** estavam em arquivos da plataforma Arduino/ESP32 3.3.9, não escritos pela equipe do projeto.
+- **2** foram avisos de estilo \`cstyleCast\` no arquivo autoral \`frimeware2.4/communication/pitaco_ble_ota.ino\`, linhas 89 e 155 na versão analisada.
+- Clang-Tidy sobre o sketch completo falhou no parser de argumentos GCC \`-fno-tree-switch-conversion\`, \`-fstrict-volatile-bitfields\` e na localização de \`<algorithm>\` no ambiente cruzado. Seu resultado anterior **não era válido como análise concluída do sketch inteiro**.
 
-- **Build e descoberta do arquivo real são obrigatórios.** Falha na geração do `compile_commands.json` ou ausência da unidade do firmware causa falha no job.
-- **Cppcheck e Clang-Tidy começam não bloqueantes** para criar baseline; os relatórios não podem ser considerados um status de aprovação de segurança.
-- Depois de revisar alertas legítimos e falsos positivos, registrar decisões e estabelecer gatilho de falha para novas ocorrências críticas.
-- Clang-Tidy pode exigir ajustes em flags/headers de ferramentas ESP32 e versões de Clang; erros de infraestrutura devem ser reportados, não silenciados.
-- Nenhuma ferramenta aqui valida qualidade de PPG/SQI, BPM, acurácia de SpO₂ ou segurança clínica.
+Por isso a análise nova tem escopos distintos e declarados:
 
-## Onde ficam as evidências
+- **Cppcheck:** unidade compilada completa \`frimeware2.4.ino.cpp\`, incluindo cabeçalhos do core ESP32. O parser separa arquivos de código autoral, vendor, toolchain e fontes geradas.
+- **Clang-Tidy:** o mesmo **código de produção do Gate 01**, incluído e compilado pelo teste C++ de host \`test/test_sqi_gate1.cpp\`, com \`clang-analyzer-*\` e \`bugprone-*\`. Esta etapa **não representa uma auditoria do firmware ESP32 inteiro**.
 
-Em Actions → **PITACO firmware - static analysis (Cppcheck / Clang-Tidy)** → execução → artifact `pitaco-esp32c3-static-analysis`:
+## Critério verificável
 
-| Arquivo | Finalidade |
-| --- | --- |
-| `coverage-manifest.txt` | Unidade gerada, origem e banco de compilação |
-| `cppcheck.xml` | Achados reportados por Cppcheck |
-| `cppcheck-version.txt` | Versão Cppcheck do runner |
-| `clang-tidy.txt` | Saída de execução Clang-Tidy |
-| `clang-tidy-version.txt` | Versão Clang-Tidy do runner |
-| `SUMMARY.md` | Síntese da execução e ressalvas |
+A Action reprova quando ocorrer qualquer condição:
 
-## Próxima etapa
+- Falha de teste host, compilação ESP32-C3 ou compilação ESP32 legado.
+- Falta de XML Cppcheck válido ou de status de qualquer analisador.
+- Código de saída incompatível com execução do Cppcheck (retornos 0 ou 2 são esperados; 2 representa diagnósticos quando \`--error-exitcode=2\`).
+- Clang-Tidy G1 não executa com sucesso.
+- Pelo menos **um alerta classificado severity=error em arquivo autoral** no XML ou saída Clang-Tidy.
 
-Verificar que o primeiro run realmente identifica `frimeware2.4.ino.cpp`, que o XML é válido, e que o Clang-Tidy não aborta por toolchain desconhecida. Registrar no [hub documental](https://github.com/PHV00/RFC-IBlueIt-Pitaco3.0-Multimodal) o link do run com commit/versão e classificação dos achados. Só então considerar quality gate.
+As categorias warning/style/performance/portability são **visíveis e exigem triagem**, mas ainda não reprovam automaticamente; os 75 avisos externos do core não são atribuídos falsamente ao firmware próprio. Não há pontuação fictícia ou supressão silenciosa dos problemas.
+
+## Visualização na interface GitHub
+
+Abra **Actions → PITACO firmware — testes, build e qualidade de código**:
+
+- A página de execução mostra resultado **host / esp32c3 / static-analysis / quality-gate**.
+- O job static-analysis publica a tabela Markdown em **Job Summary**, com alertas do código autoral, motivo de bloqueio, contagens por ferramenta e categoria.
+- Alertas do código autoral com localização física válida são publicados como **annotations**, quando possível.
+- O artifact \`pitaco-esp32c3-static-analysis\` contém \`report.html\` com **todas** as ocorrências, \`issues.json\`, XML Cppcheck, texto Clang-Tidy, versões e manifesto de cobertura.
+- GitHub compacta artifacts em ZIP. **Não é necessário baixar o ZIP para ler o resumo da Action**; baixe somente para abrir o HTML detalhado ou processar os arquivos brutos.
+
+O HTML é autocontido e pode ser aberto no navegador após extrair o artifact. Para histórico permanente ou dashboards futuros pode-se converter apenas os achados autorais com localização confiável em SARIF para Code Scanning; isso exige nova validação de mapeamento para arquivos .ino e não foi ativado nesta etapa.
+
+## Testes do próprio Quality Gate
+
+Os cenários automáticos em \`test/test_firmware_quality_report.py\` verificam:
+
+- relatório limpo (PASS);
+- aviso de estilo (registrado, não bloqueante);
+- erro de código autoral (FAIL);
+- falha de execução do Clang-Tidy (FAIL);
+- XML inválido ou ausente (FAIL).
+
+Estes testes são executados pelo job host já existente através de \`python3 -m unittest discover\`.
+
+## Limitações
+
+- Compilação e análise estática não provam leitura correta do sensor MAX30105, temporização real, FIFO sem perdas ou segurança clínica.
+- Um job verde não significa "zero avisos": significa que os critérios documentados foram satisfeitos.
+- A inspeção do Clang-Tidy no sketch completo permanece uma melhoria futura, dependente de preparar uma base Clang/C++ adequada para a toolchain RISCV ESP32.
+- Testes HIL reais no ESP32-C3, comparação com sinais de referência e rastreabilidade do binário físico continuam necessários.
