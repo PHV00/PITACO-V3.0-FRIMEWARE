@@ -1,25 +1,14 @@
 name: PITACO firmware - static analysis (Cppcheck / Clang-Tidy)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'frimeware2.4/**'
-      - '.github/workflows/firmware-static-analysis.yml'
-      - 'docs/STATIC_ANALYSIS.md'
-  pull_request:
-    paths:
-      - 'frimeware2.4/**'
-      - '.github/workflows/firmware-static-analysis.yml'
-      - 'docs/STATIC_ANALYSIS.md'
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
   static-analysis:
-    name: Arduino C++ - Cppcheck and Clang-Tidy (diagnostic)
+    name: Arduino C++ - scoped static quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -85,69 +74,45 @@ jobs:
           print("Verified canonical generated sketch:", sketch)
           PY
 
-      # Diagnostic baseline: findings are reported, but will not block current CI.
-      # Compilation-database validation above IS mandatory to avoid a false-green scan.
-      - name: Cppcheck on compiled sketch
-        continue-on-error: true
+      # Raw analyzers return different codes for findings versus technical failures.
+      # Record both codes so the report step can distinguish them and fail closed.
+      - name: Cppcheck on compiled sketch and dependencies
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
           cppcheck --version | tee reports/cppcheck-version.txt
-          cppcheck \
-            --project="$BUILD_DIR/compile_commands.json" \
+          cppcheck --project="$BUILD_DIR/compile_commands.json" \
             --file-filter='*frimeware2.4.ino.cpp' \
             --enable=warning,performance,portability,style \
-            --inconclusive \
-            --suppress=missingIncludeSystem \
-            --xml --xml-version=2 \
-            --error-exitcode=2 \
+            --inconclusive --suppress=missingIncludeSystem \
+            --xml --xml-version=2 --error-exitcode=2 \
             2>reports/cppcheck.xml
-          echo "Cppcheck completed."
+          code=$?
+          printf '%s\n' "$code" > reports/cppcheck-exit-code.txt
+          echo "Cppcheck completed with exit code $code; parsed by quality reporter."
 
-      - name: Clang-Tidy on compiled sketch (exploratory)
-        continue-on-error: true
+      - name: Clang-Tidy for real G1 module through host test
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
           clang-tidy --version | tee reports/clang-tidy-version.txt
-          clang-tidy "$SKETCH_CPP" \
-            -p="$BUILD_DIR" \
+          # The ESP32 Arduino compilation database has GCC-only flags and missing
+          # cross stdlib paths for Clang. The same production G1 module is included
+          # by this native-host test, so this check is reliable but scoped to G1.
+          clang-tidy test/test_sqi_gate1.cpp \
             -checks='-*,clang-analyzer-*,bugprone-*' \
-            --quiet \
+            --quiet -- -std=c++11 -Ifrimeware2.4 \
             >reports/clang-tidy.txt 2>&1
-          echo "Clang-Tidy completed."
+          code=$?
+          printf '%s\n' "$code" > reports/clang-tidy-exit-code.txt
+          echo "Clang-Tidy (host G1) completed with exit code $code."
 
-      - name: Summarize analysis without claiming false compliance
+      - name: Render report and enforce first-party quality gate
         if: always()
         shell: bash
         run: |
-          mkdir -p reports
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          import xml.etree.ElementTree as ET
-
-          report = Path("reports/cppcheck.xml")
-          summary = ["## PITACO ESP32-C3 static-analysis diagnostic", "",
-                     "- Scope: generated C++ sketch from Arduino CLI.",
-                     "- This workflow is **non-blocking for analyzer findings**, not a security or clinical certification."]
-          if report.is_file():
-              try:
-                  root = ET.parse(report).getroot()
-                  issues = root.findall(".//error")
-                  summary.append(f"- Cppcheck reported **{len(issues)}** findings; inspect artifact.")
-              except ET.ParseError:
-                  summary.append("- Cppcheck XML is invalid/incomplete; review scan logs.")
-          else:
-              summary.append("- Cppcheck did not produce an XML report; review scan logs.")
-          tidy = Path("reports/clang-tidy.txt")
-          summary.append("- Clang-Tidy: diagnostic output available." if tidy.exists()
-                         else "- Clang-Tidy did not produce output; review scan logs.")
-          text = "\n".join(summary) + "\n"
-          Path("reports/SUMMARY.md").write_text(text, encoding="utf-8")
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as dst:
-              dst.write(text)
-          PY
+          python3 scripts/firmware_quality_report.py \
+            --reports reports --workspace "$GITHUB_WORKSPACE"
 
       - name: Upload static-analysis reports
         if: always()
