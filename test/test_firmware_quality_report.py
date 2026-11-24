@@ -36,7 +36,7 @@ class FirmwareQualityReportTests(unittest.TestCase):
 
     def test_style_is_visible_and_nonblocking(self):
         xml = ('<results><errors><error id="cstyleCast" severity="style" msg="style">'
-               '<location file="test/test_firmware_quality_report.py" line="1"/>'
+               '<location file="frimeware2.4/sqi/gate_01_integrity.ino" line="1"/>'
                '</error></errors></results>')
         rc, data = self.run_gate(xml=xml, cpp=2)
         self.assertEqual(rc, 0)
@@ -44,11 +44,19 @@ class FirmwareQualityReportTests(unittest.TestCase):
 
     def test_first_party_error_blocks(self):
         xml = ('<results><errors><error id="nullPointer" severity="error" msg="bad">'
-               '<location file="test/test_firmware_quality_report.py" line="1"/>'
+               '<location file="frimeware2.4/sqi/gate_01_integrity.ino" line="1"/>'
                '</error></errors></results>')
         rc, data = self.run_gate(xml=xml, cpp=2)
         self.assertEqual(rc, 1)
         self.assertEqual(data["gate"], "FAIL")
+
+    def test_test_harness_error_is_not_firmware_error(self):
+        xml = ('<results><errors><error id="testOnly" severity="error" msg="harness">'
+               '<location file="test/test_firmware_quality_report.py" line="1"/>'
+               '</error></errors></results>')
+        rc, data = self.run_gate(xml=xml, cpp=2)
+        self.assertEqual(rc, 0)
+        self.assertEqual(data["findings"][0]["category"], "test-support")
 
     def test_clang_toolchain_failure_blocks(self):
         rc, data = self.run_gate(clang="error: unknown compiler argument", clang_exit=1)

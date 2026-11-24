@@ -107,6 +107,25 @@ jobs:
           printf '%s\n' "$code" > reports/clang-tidy-exit-code.txt
           echo "Clang-Tidy (host G1) completed with exit code $code."
 
+      - name: Raw analyzer outputs (expand logs)
+        if: always()
+        shell: bash
+        run: |
+          echo '::group::CPPCheck — raw XML output'
+          if [[ -f reports/cppcheck.xml ]]; then
+            cat reports/cppcheck.xml
+          else
+            echo '[No Cppcheck XML output]'
+          fi
+          echo '::endgroup::'
+          echo '::group::Clang-Tidy — raw diagnostic output'
+          if [[ -f reports/clang-tidy.txt ]]; then
+            cat reports/clang-tidy.txt
+          else
+            echo '[No Clang-Tidy raw output]'
+          fi
+          echo '::endgroup::'
+
       - name: Render report and enforce first-party quality gate
         if: always()
         shell: bash

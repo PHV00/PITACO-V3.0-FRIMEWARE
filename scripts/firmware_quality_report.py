@@ -29,7 +29,12 @@ def source_location(raw, root):
         return "dependency", value, False
     if relative.startswith("frimeware2.4/src/vendor_"):
         return "vendor", relative, False
-    owned = relative.startswith("frimeware2.4/") or relative.startswith("test/")
+    # Only the canonical firmware is in scope for static quality approval.
+    # Host tests are used to compile production code, but warnings in test
+    # harnesses must not be presented as firmware defects.
+    owned = relative.startswith("frimeware2.4/")
+    if relative.startswith("test/"):
+        return "test-support", relative, False
     return ("first-party" if owned else "other"), relative, owned and path.is_file()
 
 
@@ -114,7 +119,7 @@ def generate(reports, workspace):
                 "**Enforced:** all analyzers run successfully, XML is valid, and no "
                 "first-party severity=error finding. Other findings are visible for triage.",
                 "",
-                "**Scope:** Cppcheck analyses the generated Arduino sketch and dependency "
+                "**Scope:** Gate applies only to first-party source in frimeware2.4/. Cppcheck analyses the generated Arduino sketch and dependency "
                 "headers; Clang-Tidy analyses the same SQI Gate 01 code through its "
                 "native C++ test, not the whole ESP32 sketch. Hardware tests are separate.",
                 ""]
