@@ -1,7 +1,8 @@
-name: PITACO 2.4 — host, protocolo, bridge e build ESP32-C3
+name: PITACO firmware — testes, build e qualidade de código
 on:
   push:
     branches: [main, fix/pitaco24-layout-imports-ci]
+  workflow_dispatch:
   pull_request:
     paths:
       - 'frimeware2.4/**'
@@ -11,6 +12,8 @@ on:
       - 'docs/**'
       - 'requirements.txt'
       - '.github/workflows/pitaco24-g1.yml'
+      - '.github/workflows/firmware-static-analysis.yml'
+      - 'scripts/firmware_quality_report.py'
 
 jobs:
   host:
@@ -52,3 +55,37 @@ jobs:
       - name: Compilar firmware legado ESP32
         run: |
           arduino-cli compile --fqbn esp32:esp32:esp32 arduino-pitaco-ble-legancy
+
+  static-analysis:
+    name: Cppcheck + Clang-Tidy (scoped)
+    uses: ./.github/workflows/firmware-static-analysis.yml
+    permissions:
+      contents: read
+
+  quality-gate:
+    name: PITACO firmware quality gate
+    if: always()
+    needs: [host, esp32c3, static-analysis]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate mandatory test, build and analysis results
+        shell: bash
+        env:
+          HOST_RESULT: ${{ needs.host.result }}
+          ESP32_RESULT: ${{ needs.esp32c3.result }}
+          STATIC_RESULT: ${{ needs.static-analysis.result }}
+        run: |
+          {
+            echo '## PITACO firmware — final quality gate'
+            echo ''
+            echo '| Check | Result |'
+            echo '|---|---|'
+            echo "| Host G1 + Python/USB/BLE | ${HOST_RESULT} |"
+            echo "| ESP32-C3 and legacy ESP32 compilation | ${ESP32_RESULT} |"
+            echo "| Cppcheck/Clang-Tidy verified reports | ${STATIC_RESULT} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${HOST_RESULT}" != success || "${ESP32_RESULT}" != success || "${STATIC_RESULT}" != success ]]; then
+            echo '::error::PITACO quality gate failed: check host, ESP32 and static-analysis jobs.'
+            exit 1
+          fi
+          echo 'All mandatory checks passed.'
