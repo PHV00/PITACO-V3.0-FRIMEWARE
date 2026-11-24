@@ -1,0 +1,158 @@
+name: PITACO firmware - static analysis (Cppcheck / Clang-Tidy)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frimeware2.4/**'
+      - '.github/workflows/firmware-static-analysis.yml'
+      - 'docs/STATIC_ANALYSIS.md'
+  pull_request:
+    paths:
+      - 'frimeware2.4/**'
+      - '.github/workflows/firmware-static-analysis.yml'
+      - 'docs/STATIC_ANALYSIS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-analysis:
+    name: Arduino C++ - Cppcheck and Clang-Tidy (diagnostic)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      BUILD_DIR: ${{ runner.temp }}/pitaco-static-esp32c3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install toolchain and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          arduino-cli config init
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli lib install "SparkFun MAX3010x Pulse and Proximity Sensor Library"
+          sudo apt-get update
+          sudo apt-get install -y cppcheck clang-tidy
+          mkdir -p reports
+
+      - name: Compile canonical ESP32-C3 sketch and generate compilation database
+        shell: bash
+        run: |
+          set -euo pipefail
+          arduino-cli compile --fqbn esp32:esp32:esp32c3 --build-path "$BUILD_DIR" frimeware2.4
+          arduino-cli compile --fqbn esp32:esp32:esp32c3 --build-path "$BUILD_DIR" --only-compilation-database frimeware2.4
+
+      - name: Verify sketch is included in compilation database
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          build = Path(os.environ["BUILD_DIR"])
+          database = build / "compile_commands.json"
+          if not database.is_file():
+              raise SystemExit("ERROR: Arduino compilation database was not generated")
+          commands = json.loads(database.read_text(encoding="utf-8"))
+          sketches = [Path(row["file"]) for row in commands
+                      if Path(row["file"]).name == "frimeware2.4.ino.cpp"]
+          if len(sketches) != 1:
+              raise SystemExit(f"ERROR: expected one compiled sketch, found {len(sketches)}")
+          sketch = sketches[0]
+          if not sketch.is_file():
+              raise SystemExit(f"ERROR: generated C++ file missing: {sketch}")
+          text = sketch.read_text(encoding="utf-8", errors="replace")
+          if "g1Evaluate" not in text or "PollMAX30105" not in text:
+              raise SystemExit("ERROR: sketch does not contain expected firmware entrypoints")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"SKETCH_CPP={sketch}\n")
+          Path("reports/coverage-manifest.txt").write_text(
+              f"Source: {sketch}\nDatabase: {database}\n"
+              "Scope: compiled PITACO sketch (C++ translation unit); vendor libraries "
+              "are dependencies, not individually quality-gated.\n",
+              encoding="utf-8"
+          )
+          print("Verified canonical generated sketch:", sketch)
+          PY
+
+      # Diagnostic baseline: findings are reported, but will not block current CI.
+      # Compilation-database validation above IS mandatory to avoid a false-green scan.
+      - name: Cppcheck on compiled sketch
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cppcheck --version | tee reports/cppcheck-version.txt
+          cppcheck \
+            --project="$BUILD_DIR/compile_commands.json" \
+            --file-filter='*frimeware2.4.ino.cpp' \
+            --enable=warning,performance,portability,style \
+            --inconclusive \
+            --suppress=missingIncludeSystem \
+            --xml --xml-version=2 \
+            --error-exitcode=2 \
+            2>reports/cppcheck.xml
+          echo "Cppcheck completed."
+
+      - name: Clang-Tidy on compiled sketch (exploratory)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          clang-tidy --version | tee reports/clang-tidy-version.txt
+          clang-tidy "$SKETCH_CPP" \
+            -p="$BUILD_DIR" \
+            -checks='-*,clang-analyzer-*,bugprone-*' \
+            --quiet \
+            >reports/clang-tidy.txt 2>&1
+          echo "Clang-Tidy completed."
+
+      - name: Summarize analysis without claiming false compliance
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p reports
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          report = Path("reports/cppcheck.xml")
+          summary = ["## PITACO ESP32-C3 static-analysis diagnostic", "",
+                     "- Scope: generated C++ sketch from Arduino CLI.",
+                     "- This workflow is **non-blocking for analyzer findings**, not a security or clinical certification."]
+          if report.is_file():
+              try:
+                  root = ET.parse(report).getroot()
+                  issues = root.findall(".//error")
+                  summary.append(f"- Cppcheck reported **{len(issues)}** findings; inspect artifact.")
+              except ET.ParseError:
+                  summary.append("- Cppcheck XML is invalid/incomplete; review scan logs.")
+          else:
+              summary.append("- Cppcheck did not produce an XML report; review scan logs.")
+          tidy = Path("reports/clang-tidy.txt")
+          summary.append("- Clang-Tidy: diagnostic output available." if tidy.exists()
+                         else "- Clang-Tidy did not produce output; review scan logs.")
+          text = "\n".join(summary) + "\n"
+          Path("reports/SUMMARY.md").write_text(text, encoding="utf-8")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as dst:
+              dst.write(text)
+          PY
+
+      - name: Upload static-analysis reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitaco-esp32c3-static-analysis
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30
